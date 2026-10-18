@@ -1,0 +1,19 @@
+{
+  "tokenizer": "gpt2",
+  "vocab_size": 50257,
+  "tokens_per_word": 1.340556608114887,
+  "direct_word_occurrence_pct": 74.54759525892268,
+  "direct_word_type_pct": 20.877093386318478,
+  "words_in_dictionary_occurrences": 179817,
+  "unique_word_types": 21138,
+  "unique_direct_types": 4413,
+  "throughput": {
+    "encode_seconds": 0.7842365500109736,
+    "tokens_per_second": 350289.7180654945,
+    "mb_per_second": 1.6268560805819974,
+    "words_per_second": 307574.289921357,
+    "num_tokens": 274710,
+    "num_bytes": 1275840,
+    "num_words": 241211
+  }
+}

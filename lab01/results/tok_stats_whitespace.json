@@ -1,0 +1,23 @@
+{
+  "tokenizer": "whitespace",
+  "vocab_size": 50257,
+  "tokens_per_word": 1.0101404993967937,
+  "direct_word_occurrence_pct": 95.69381164208929,
+  "direct_word_type_pct": 78.61197842747659,
+  "words_in_dictionary_occurrences": 230824,
+  "unique_word_types": 21138,
+  "unique_direct_types": 16617,
+  "throughput": {
+    "encode_seconds": 0.08715477099758573,
+    "tokens_per_second": 2828852.5938164606,
+    "mb_per_second": 14.638785523690288,
+    "words_per_second": 2767616.7034697593,
+    "num_tokens": 246548,
+    "num_bytes": 1275840,
+    "num_words": 241211
+  },
+  "oov_occurrences": 10387,
+  "oov_occurrence_pct": 4.306188357910709,
+  "oov_unique_types": 4521,
+  "oov_type_pct": 21.388021572523417
+}

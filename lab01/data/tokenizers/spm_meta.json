@@ -1,0 +1,7 @@
+{
+  "vocab_size": 50257,
+  "algorithm": "unigram",
+  "model": "/net/afscra/people/plgwmackowiak/UMISI-sem2-Computational-Linguistics/lab01/data/tokenizers/spm.model",
+  "train_wall_seconds": 105.01499981991947,
+  "input_sentence_size": 150000
+}

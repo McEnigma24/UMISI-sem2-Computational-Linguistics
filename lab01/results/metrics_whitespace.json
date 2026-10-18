@@ -1,0 +1,38 @@
+{
+  "tokenizer": "whitespace",
+  "train_wall_seconds": 1055.7198589041363,
+  "total_steps": 6339,
+  "tokens_per_second": 98376.6433150243,
+  "peak_gpu_mem_mb": 13917.088256,
+  "final_train_loss": 4.071971893310547,
+  "best_val_loss": 3.891227424144745,
+  "num_train_tokens": 103859269,
+  "smoke": false,
+  "model_cfg": {
+    "n_layer": 6,
+    "n_head": 8,
+    "n_embd": 512,
+    "n_ff": 2048,
+    "block_size": 256,
+    "dropout": 0.1,
+    "vocab_size": 50257
+  },
+  "nll_nats": 942091.0625,
+  "word_perplexity": 49.683458802487095,
+  "char_perplexity": 2.0950712303667642,
+  "bits_per_char": 1.0669992949747171,
+  "word_perplexity_unk_corrected": 146.23351750712922,
+  "unk_extra_nll": 260395.16743646617,
+  "num_words": 241211,
+  "num_chars": 1273806,
+  "inference_seconds": 9.491297306958586,
+  "generation": {
+    "prompt": "The history of the city began when ",
+    "max_new_tokens": 32,
+    "new_tokens": 32,
+    "seconds": 0.2561988939996809,
+    "tokens_per_second": 124.90295918310974
+  },
+  "eval_block_size": 256,
+  "eval_stride": 128
+}

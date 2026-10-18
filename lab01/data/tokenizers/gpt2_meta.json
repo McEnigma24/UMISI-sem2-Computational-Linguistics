@@ -1,0 +1,5 @@
+{
+  "vocab_size": 50257,
+  "target_vocab_size": 50257,
+  "train_wall_seconds": 1.2725213803350925
+}

@@ -1,5 +1,39 @@
 # Lab01 — tokenization
 
+## CLI workflow (default)
+
+Dataset: **WikiText-103 raw** (`Salesforce/wikitext`). Three tokenizers at **N = 50257**: GPT-2 BPE, custom whitespace+`<UNK>`, SentencePiece Unigram.
+
+```bash
+cd lab01
+source local/env.sh   # optional: HF_HOME, UV_CACHE on $SCRATCH
+uv sync
+
+# Login (network for first download)
+uv run lab01 prepare-data
+
+# CPU batch: tokenizers + encode + stats (no LM training)
+./grid/run_cpu.sh 1 4
+# or: LAB01_CMD="all --skip-train" ./grid/run_cpu.sh 1 4
+
+# GPU smoke test
+LAB01_CMD="all --smoke" ./grid/run_gpu.sh 1 4
+
+# One tokenizer (train + eval in one GPU job)
+LAB01_SHELL_CMD='uv run lab01 train --tokenizer gpt2 && uv run lab01 eval --tokenizer gpt2' ./grid/run_gpu.sh 1 4
+
+# Full pipeline (long)
+./grid/run_gpu.sh 1 4
+
+uv run lab01 report
+```
+
+Commands: `prepare-data`, `train-tokenizers`, `encode`, `tok-stats`, `qualitative`, `train --tokenizer {gpt2,whitespace,spm}`, `eval --tokenizer …`, `report`, `all [--smoke] [--skip-train]`.
+
+Artifacts: `data/tokenizers/`, `data/bins/<tok>/`, `results/metrics_*.json`, `results/qualitative.md`, [`REPORT.md`](REPORT.md).
+
+Grid jobs read **`LAB01_CMD`** (shell words passed to `uv run lab01`). Set `HF_HUB_OFFLINE=1` on compute nodes after caches are warm.
+
 ## Jupyter w Cursorze (Remote SSH)
 
 1. Połącz się z Ares przez **Remote SSH** i otwórz folder **`lab01`** jako workspace (nie cały `$HOME`).
@@ -87,4 +121,4 @@ Wtedy w Cursorze URL z `127.0.0.1` z `grid/.jupyter_connect`.
 ./grid/run_gpu.sh [GPUS] [CPUS_PER_TASK]
 ```
 
-Smoke: `uv run python -m lab01_tokenization` lub `uv run lab01`.
+Smoke (login, CPU): `uv run lab01 all --smoke --max-train-mb 2`.

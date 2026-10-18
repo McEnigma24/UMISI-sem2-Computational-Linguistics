@@ -1,0 +1,5 @@
+data/raw/
+data/bins/
+results/checkpoints/
+results/logs/*.log
+.venv/
