@@ -33,9 +33,9 @@ echo "SLURM_NTASKS=${SLURM_NTASKS} SLURM_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK} OM
 echo "GRID_JOB -> STARTED"
 
     if [[ "${SLURM_NTASKS:-1}" -gt 1 ]]; then
-        mpirun -np "$SLURM_NTASKS" uv run python _src/main.py
+        mpirun -np "$SLURM_NTASKS" uv run python -m lab01_tokenization
     else
-        uv run python _src/main.py
+        uv run python -m lab01_tokenization
     fi
 
 

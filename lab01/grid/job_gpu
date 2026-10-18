@@ -38,12 +38,12 @@ nvidia-smi
 echo "GRID_JOB -> STARTED"
 
     if [[ "$GPUS" -gt 1 ]] && uv run python -c "import torch" 2>/dev/null; then
-        uv run python -m torch.distributed.run --standalone --nproc_per_node="$GPUS" _src/main.py
+        uv run python -m torch.distributed.run --standalone --nproc_per_node="$GPUS" -m lab01_tokenization
     else
         if [[ "$GPUS" -gt 1 ]]; then
             echo "UWAGA: GPUS=$GPUS, ale brak PyTorch w .venv — jeden proces (dodaj torch i uv sync na CPU job)."
         fi
-        uv run python _src/main.py
+        uv run python -m lab01_tokenization
     fi
 
 

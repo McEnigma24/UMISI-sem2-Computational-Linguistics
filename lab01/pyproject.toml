@@ -13,6 +13,9 @@ dependencies = [
     "torch>=2.14.1",
 ]
 
-# Skrypty labu w _src/ (jak szablon PLGrid), bez pakietu src/<name>/
-[tool.uv]
-package = false
+[project.scripts]
+lab01 = "lab01_tokenization.main:main"
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13.0"]
+build-backend = "uv_build"

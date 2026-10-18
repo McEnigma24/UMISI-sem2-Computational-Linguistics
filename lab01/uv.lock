@@ -114,7 +114,7 @@ wheels = [
 [[package]]
 name = "lab01-tokenization"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "mpi4py" },
     { name = "openmpi" },

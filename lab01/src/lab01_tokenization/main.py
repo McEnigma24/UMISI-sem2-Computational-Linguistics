@@ -15,7 +15,7 @@ def _slurm_cpu_summary() -> str:
     )
 
 
-if __name__ == "__main__":
+def main() -> None:
     if "LOCAL_RANK" in os.environ:
         import torch
 
@@ -40,3 +40,7 @@ if __name__ == "__main__":
         print(f"Hello, World! I am rank {rank} of {size} after barrier")
         if rank == 0:
             print(_slurm_cpu_summary())
+
+
+if __name__ == "__main__":
+    main()

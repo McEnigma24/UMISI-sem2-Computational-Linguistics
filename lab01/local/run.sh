@@ -5,4 +5,4 @@ clear
 rm -f output/*
 
 proc_number="${1:-4}"
-uv run mpiexec -n "$proc_number" python _src/main.py | tee output/out
+uv run mpiexec -n "$proc_number" python -m lab01_tokenization | tee output/out
