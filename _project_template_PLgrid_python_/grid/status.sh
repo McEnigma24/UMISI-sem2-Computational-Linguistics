@@ -1,4 +1,4 @@
 #!/bin/bash
-source "_common_" 2>/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/_common_"
 
-watch squeue -u $USER
+watch squeue -u "$USER"

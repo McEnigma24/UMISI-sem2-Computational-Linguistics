@@ -1,4 +1,4 @@
 #!/bin/bash
-source "_common_" 2>/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/_common_"
 
-scancel $(cat grid/.latest_job_started)
+scancel "$(cat grid/.latest_job_started)"

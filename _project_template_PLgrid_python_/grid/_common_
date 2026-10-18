@@ -1,6 +1,15 @@
 #!/bin/bash
+_GRID_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GRID_ROOT="$(cd "$_GRID_DIR/.." && pwd)"
 
-if [[ "$(basename "$PWD")" == "grid" ]]; then
-    cd ..
-    echo "going back to repo root"
+if [[ "$PWD" != "$GRID_ROOT" ]]; then
+    if [[ "$(basename "$PWD")" == "grid" ]]; then
+        echo "going back to repo root"
+    fi
+    cd "$GRID_ROOT"
 fi
+
+is_jupyter_mode() {
+    case "${1,,}" in j|jupy|jupyter|jp) return 0 ;; esac
+    return 1
+}

@@ -1,8 +1,3 @@
 #!/bin/bash
-source "_common_" 2>/dev/null
-
-clear
-rm -f output/*
-
-proc_number="${1:-4}"
-uv run mpiexec -n "$proc_number" python _src/main.py | tee output/out
+echo "Użyj wyłącznie: ./grid/run_cpu.sh lub ./grid/run_gpu.sh (batch lub j/jupy/jupyter)" >&2
+exit 1

@@ -1,7 +1,7 @@
 [project]
-name = "test"
+name = "plgrid-lab"
 version = "0.1.0"
-description = "Add your description here"
+description = "Szablon projektu labów UMISI na PLGrid Ares"
 readme = "README.md"
 authors = [
     { name = "McEnigma24", email = "wojciech.mackowiak24@gmail.com" }
@@ -10,11 +10,30 @@ requires-python = ">=3.12"
 dependencies = [
     "mpi4py>=4.1.2",
     "openmpi>=5.0.11",
+    "torch>=2.14.1",
+    "numpy>=2.0.0",
+    "transformers>=4.46.0",
+    "datasets>=3.0.0",
+    "tqdm>=4.66.0",
 ]
 
 [project.scripts]
-test = "test:main"
+plgrid-smoke = "plgrid_lab.main:main"
+
+[dependency-groups]
+dev = [
+    "jupyterlab>=4.2.0",
+    "ipykernel>=6.29.0",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.21,<0.13.0"]
 build-backend = "uv_build"
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }

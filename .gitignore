@@ -1,0 +1,10 @@
+.cursor
+.vscode
+__pycache__
+
+*ssh*
+*venv*
+
+*/build/*
+*/exe/*
+*/log/*
