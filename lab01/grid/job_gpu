@@ -1,0 +1,50 @@
+#!/bin/bash
+#SBATCH --job-name=GRID_TEMPLATE_GPU
+#SBATCH --account=plgar2026-gpu     # hpc-grants -> Allocation:
+#SBATCH --partition=plgrid-gpu-v100 # konto plgar2026-gpu → partycja plgrid-gpu-v100 (nie „gpu”)
+#SBATCH --gres=gpu:1                # num of GPUs
+#SBATCH --time=00:10:00
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=16G
+#SBATCH --output=output/out.txt
+#SBATCH --error=output/err.txt
+
+set -euo pipefail
+
+cd "$SLURM_SUBMIT_DIR"
+# shellcheck source=/dev/null
+[[ -f local/env.sh ]] && source local/env.sh
+
+ls -al
+
+GPUS="${GPUS:-${SLURM_GPUS_ON_NODE:-1}}"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-${SLURM_CPUS_PER_TASK:-4}}"
+
+echo "GPUS=${GPUS} SLURM_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK} OMP_NUM_THREADS=${OMP_NUM_THREADS}"
+
+module load cuda
+
+nvidia-smi
+
+# SCRATCH env activate #
+# scratch_activation_path="$(realpath .)/.venv/bin/activate"
+# echo "SOURCING -> $scratch_activation_path"
+# source $scratch_activation_path
+
+
+
+# START #
+echo "GRID_JOB -> STARTED"
+
+    if [[ "$GPUS" -gt 1 ]] && uv run python -c "import torch" 2>/dev/null; then
+        uv run python -m torch.distributed.run --standalone --nproc_per_node="$GPUS" _src/main.py
+    else
+        if [[ "$GPUS" -gt 1 ]]; then
+            echo "UWAGA: GPUS=$GPUS, ale brak PyTorch w .venv — jeden proces (dodaj torch i uv sync na CPU job)."
+        fi
+        uv run python _src/main.py
+    fi
+
+
+echo "GRID_JOB -> ENDED"

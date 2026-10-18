@@ -1,0 +1,47 @@
+total 136
+drwxr-xr-x 10 plgwmackowiak plgrid  4096 Oct 18 20:49 .
+drwxr-xr-x  6 plgwmackowiak plgrid  4096 Oct 18 20:31 ..
+-rw-r--r--  1 plgwmackowiak plgrid  4222 Oct 18 18:16 1-tokenization.md
+drwxr-xr-x  5 plgwmackowiak plgrid  4096 Oct 18 18:50 data
+drwxr-xr-x  2 plgwmackowiak plgrid  4096 Oct 18 20:43 grid
+drwxr-xr-x  2 plgwmackowiak plgrid  4096 Oct 18 20:57 local
+drwxr-xr-x  2 plgwmackowiak plgrid  4096 Oct 18 21:01 output
+-rw-r--r--  1 plgwmackowiak plgrid   422 Oct 18 21:00 pyproject.toml
+-rw-r--r--  1 plgwmackowiak plgrid     5 Oct 18 20:43 .python-version
+-rw-r--r--  1 plgwmackowiak plgrid     0 Oct 10 02:52 README.md
+drwxr-xr-x  4 plgwmackowiak plgrid  4096 Oct 18 18:50 results
+drwxr-xr-x  2 plgwmackowiak plgrid  4096 Oct 18 20:43 _src
+drwxr-xr-x  4 plgwmackowiak plgrid  4096 Oct 18 18:51 src
+lrwxrwxrwx  1 plgwmackowiak plgrid    23 Oct 18 20:31 sync_git_repos.sh -> ../../sync_git_repos.sh
+-rw-r--r--  1 plgwmackowiak plgrid 80376 Oct 18 21:00 uv.lock
+drwxr-xr-x  7 plgwmackowiak plgrid  4096 Oct 18 20:50 .venv
+GPUS=2 SLURM_CPUS_PER_TASK=2 OMP_NUM_THREADS=2
+Sun Oct 18 21:01:26 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.178.04             Driver Version: 580.178.04     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  Tesla V100-SXM2-32GB           On  |   00000000:5F:00.0 Off |                    0 |
+| N/A   38C    P0             41W /  300W |       0MiB /  32768MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   1  Tesla V100-SXM2-32GB           On  |   00000000:B5:00.0 Off |                    0 |
+| N/A   40C    P0             43W /  300W |       0MiB /  32768MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+GRID_JOB -> STARTED
+torchrun local_rank=1 world_size=2 device=1
+torchrun local_rank=0 world_size=2 device=0
+SLURM_NTASKS=1 SLURM_CPUS_PER_TASK=2 OMP_NUM_THREADS=2 (łącznie rdzeni CPU ≈ 2)
+GRID_JOB -> ENDED

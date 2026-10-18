@@ -1,0 +1,37 @@
+#!/bin/bash
+#SBATCH --job-name=GRID_TEMPLATE_GPU
+#SBATCH --account=plgar2026-gpu     # hpc-grants -> Allocation:
+#SBATCH --partition=gpu             # sinfo -s   -> Partition:   gpu | plgrid-gpu-v100
+#SBATCH --gres=gpu:1                # num of GPUs
+#SBATCH --time=00:10:00
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=16G
+#SBATCH --output=output/out.txt
+#SBATCH --error=output/err.txt
+
+source "_common_" 2>/dev/null
+
+cd $SLURM_SUBMIT_DIR
+ls -al
+
+# Load modules #
+module load openmpi/4.1.6-gcc-13.2.0
+module load cuda
+
+nvidia-smi
+
+# SCRATCH env activate #
+# scratch_activation_path="$(realpath .)/.venv/bin/activate"
+# echo "SOURCING -> $scratch_activation_path"
+# source $scratch_activation_path
+
+
+
+# START #
+echo "GRID_JOB -> STARTED"
+
+    mpirun -np $SLURM_NTASKS uv run python _src/main.py
+
+
+echo "GRID_JOB -> ENDED"

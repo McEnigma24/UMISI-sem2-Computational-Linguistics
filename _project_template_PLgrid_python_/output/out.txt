@@ -1,0 +1,32 @@
+total 56
+drwxr-xr-x 8 plgwmackowiak plgrid  4096 Oct 18 18:12 .
+drwxr-xr-x 5 plgwmackowiak plgrid  4096 Oct 18 17:54 ..
+drwxr-xr-x 2 plgwmackowiak plgrid  4096 Oct 18 18:02 grid
+drwxr-xr-x 2 plgwmackowiak plgrid  4096 Oct 18 17:54 local
+drwxr-xr-x 2 plgwmackowiak plgrid  4096 Oct 18 18:13 output
+-rw-r--r-- 1 plgwmackowiak plgrid   401 Oct 18 17:54 pyproject.toml
+-rw-r--r-- 1 plgwmackowiak plgrid     5 Oct 18 17:54 .python-version
+-rw-r--r-- 1 plgwmackowiak plgrid     0 Oct 10 02:52 README.md
+drwxr-xr-x 2 plgwmackowiak plgrid  4096 Oct 18 17:54 _src
+drwxr-xr-x 3 plgwmackowiak plgrid  4096 Oct 18 18:12 src
+-rwxr-xr-x 1 plgwmackowiak plgrid   355 Oct 18 17:54 sync_git_repos.sh
+-rw-r--r-- 1 plgwmackowiak plgrid 11675 Oct 18 17:54 uv.lock
+drwxr-xr-x 7 plgwmackowiak plgrid  4096 Oct 18 17:54 .venv
+GRID_JOB -> STARTED
+Hello, World! I am rank 0 of 8
+Hello, World! I am rank 1 of 8
+Hello, World! I am rank 2 of 8
+Hello, World! I am rank 3 of 8
+Hello, World! I am rank 4 of 8
+Hello, World! I am rank 5 of 8
+Hello, World! I am rank 6 of 8
+Hello, World! I am rank 7 of 8
+Hello, World! I am rank 6 of 8 after barrier
+Hello, World! I am rank 0 of 8 after barrier
+Hello, World! I am rank 2 of 8 after barrier
+Hello, World! I am rank 4 of 8 after barrier
+Hello, World! I am rank 7 of 8 after barrier
+Hello, World! I am rank 3 of 8 after barrier
+Hello, World! I am rank 1 of 8 after barrier
+Hello, World! I am rank 5 of 8 after barrier
+GRID_JOB -> ENDED
