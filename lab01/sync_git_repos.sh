@@ -1,1 +1,1 @@
-../../sync_git_repos.sh
+../sync_git_repos.sh
