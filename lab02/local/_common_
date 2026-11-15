@@ -1,9 +1,0 @@
-#!/bin/bash
-
-if [[ "$(basename "$PWD")" == "local" ]]; then
-    cd ..
-    echo "going back to repo root"
-fi
-
-# shellcheck source=/dev/null
-source "$(dirname "${BASH_SOURCE[0]}")/env.sh"

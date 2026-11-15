@@ -1,0 +1,13 @@
+clear
+
+rsync -av \
+--exclude='.venv' \
+--exclude='.ruff_cache' \
+--exclude='__pycache__' \
+--exclude='build' \
+--exclude='data' \
+--exclude='saved_models' \
+--exclude='model_evaluations' \
+--exclude='runs' \
+/home/womackow/CODE_SPACE/_my_stuff_/ML/Pytorch-Playground/RNN/Language_RNN/ lab02/
+

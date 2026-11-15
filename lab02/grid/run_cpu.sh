@@ -1,8 +1,8 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common_"
 
-# ./grid/run_cpu.sh [NTASKS] [CPUS_PER_TASK]
-# ./grid/run_cpu.sh {jupyter|jupy|j|jp} [NTASKS] [CPUS_PER_TASK]
+# ./grid/run_cpu.sh [NTASKS] [CPUS_PER_TASK]           — batch (domyślnie 8 1)
+# ./grid/run_cpu.sh {jupyter|jupy|j|jp} [NTASKS] [CPUS_PER_TASK]  — interaktywny węzeł, max 2 h
 
 MODE="${1:-batch}"
 TIME="${GRID_JUPYTER_TIME:-02:00:00}"
@@ -17,7 +17,7 @@ if is_jupyter_mode "$MODE"; then
   exec srun \
     --account="$ACCOUNT" \
     --partition="$PARTITION" \
-    --job-name=plgrid_jupyter_cpu \
+    --job-name=lrnn_jupyter_cpu \
     --ntasks="$NTASKS" \
     --cpus-per-task="$CPUS_PER_TASK" \
     --mem="$MEM" \
