@@ -14,7 +14,7 @@ _DUAL3060_BASE = dict(
     seq_len=512,
     window_stride=512,
 
-    epochs=100,             # time per model will limit this
+    epochs=10,              # time per model will limit this
     time_budget_min=90,     # max training time
 )
 

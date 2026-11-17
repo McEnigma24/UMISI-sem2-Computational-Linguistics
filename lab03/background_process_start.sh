@@ -16,8 +16,10 @@ if [[ -f "${PID_FILE}" ]]; then
   fi
 fi
 
-nohup ./shell.sh ./start.sh >"${LOG_FILE}" 2>&1 &
+# Własna sesja — inaczej Ctrl+C przy tail -f trafia w tę samą grupę procesów co docker.
+setsid nohup ./shell.sh ./start.sh >"${LOG_FILE}" 2>&1 </dev/null &
 echo "$!" >"${PID_FILE}"
+disown -h "$!" 2>/dev/null || true
 echo "Start w tle (PID $(cat "${PID_FILE}"))."
 
 exec "${ROOT}/background_process_tail.sh"

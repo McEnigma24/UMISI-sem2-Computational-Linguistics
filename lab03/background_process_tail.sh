@@ -21,12 +21,16 @@ fi
 
 if [[ "${active}" -eq 1 ]]; then
   printf '\n\n\nACTIVE (PID %s)\n\n\n' "${pid}"
+  sleep 2
 else
   printf '\n\n\nDEAD\n\n\n'
+  read choice
 fi
 
-sleep 2
 clear
 
 touch "${LOG_FILE}"
-exec tail -f "${LOG_FILE}"
+
+trap 'printf "\n"' INT
+
+tail -f "${LOG_FILE}"
