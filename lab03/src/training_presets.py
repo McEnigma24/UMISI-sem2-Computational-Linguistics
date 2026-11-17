@@ -8,8 +8,8 @@ _DUAL3060_BASE = dict(
 
     checkpoint_every=1,
     eval_every=1,
-    checkpoint_prune_post_training_mod=5,
-    checkpoint_prune_post_training_tail=5,
+    checkpoint_prune_post_training_mod=1,
+    checkpoint_prune_post_training_tail=1,
 
     seq_len=512,
     window_stride=512,
@@ -104,13 +104,11 @@ DUAL3060_LLAMA_5M: dict = {
 # }
 
 DUAL3060_ALL: list[tuple[str, dict]] = [
-
     # ("transformer_GPT2small", DUAL3060_GPT2),
     # ("transformer_nanoGPT", DUAL3060_NANO),
-
     ("transformer_miniLLaMA", DUAL3060_LLAMA_5M),
-    # ("transformer_miniLLaMA", DUAL3060_LLAMA_10M),
-    # ("transformer_miniLLaMA", DUAL3060_LLAMA_25M),
-    # ("transformer_miniLLaMA", DUAL3060_LLAMA_50M),
+    ("transformer_miniLLaMA", DUAL3060_LLAMA_10M),
+    ("transformer_miniLLaMA", DUAL3060_LLAMA_25M),
+    ("transformer_miniLLaMA", DUAL3060_LLAMA_50M),
     ("transformer_miniLLaMA", DUAL3060_LLAMA_110M),
 ]
