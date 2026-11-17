@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
+import time
+from datetime import datetime, timedelta
 
 import infer
 import train
@@ -12,14 +13,16 @@ from _utils_.log_print import log_print, reset_log_timer, tensorboard_run_dir
 
 from training_presets import DUAL3060_ALL
 
-_TRAIN_JOB_ENV = "LANGUAGE_RNN_TRAIN_JOB"
-_TENSORBOARD_JOB_ENV = "LANGUAGE_RNN_TENSORBOARD_DIR"
 
+def _session_started_at() -> datetime:
+    """Jeden timestamp na oba procesy DDP — drugi proces to re-exec main.py z kopią env."""
+    ts = os.environ.setdefault("LANGUAGE_RNN_SESSION_TS", str(int(time.time())))
+    return datetime.fromtimestamp(int(ts))
 
-def main() -> str:
+def main(session_started_at: datetime) -> str:
     reset_log_timer()
     log_root = os.environ.get("TENSORBOARD_LOGDIR", "/workspace/runs")
-    run_dir = tensorboard_run_dir(log_root)
+    run_dir = tensorboard_run_dir(log_root, session_started_at)
 
     try:
         import torch
@@ -33,29 +36,19 @@ def main() -> str:
     return run_dir
 
 
-def _train_job(run_dir: str, job_index: int) -> None:
-    architecture, preset = DUAL3060_ALL[job_index]
-    jobstate = os.path.join(os.path.dirname(__file__), ".train_jobstate")
-    os.makedirs(jobstate, exist_ok=True)
-    os.environ[_TRAIN_JOB_ENV] = str(job_index)
-    os.environ[_TENSORBOARD_JOB_ENV] = run_dir
-    os.environ["LANGUAGE_RNN_JOBSTATE_DIR"] = jobstate
-    try:
-        train.main(tensorboard_dir=run_dir, architecture=architecture, **preset)
-    finally:
-        os.environ.pop(_TRAIN_JOB_ENV, None)
-        os.environ.pop(_TENSORBOARD_JOB_ENV, None)
-        os.environ.pop("LANGUAGE_RNN_JOBSTATE_DIR", None)
-
 
 if __name__ == "__main__":
-    # Lightning DDP uruchamia ten skrypt ponownie z LOCAL_RANK=1 przy pierwszym fit();
-    # oba procesy muszą przejść całą pętlę w tej samej kolejności (każdy Trainer.fit to wspólny krok).
-    if os.environ.get("LOCAL_RANK", "0") == "0":
-        shutil.rmtree(os.path.join(os.path.dirname(__file__), ".train_jobstate"), ignore_errors=True)
-    run_dir = main()
-    for job_index in range(len(DUAL3060_ALL)):
-        _train_job(run_dir, job_index)
+    session_started_at = _session_started_at()
+    run_dir = main(session_started_at)
+    
+    # Oba procesy DDP idą przez tę pętlę w tej samej kolejności; +job_index s = osobny katalog na job.
+    for job_index, (architecture, preset) in enumerate(DUAL3060_ALL):
+        train.main(
+            tensorboard_dir=run_dir,
+            architecture=architecture,
+            run_started_at=session_started_at + timedelta(seconds=job_index),
+            **preset,
+        )
 
 
 # # COMPARE THEM ALL #

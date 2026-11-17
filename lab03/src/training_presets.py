@@ -108,6 +108,7 @@ DUAL3060_ALL: list[tuple[str, dict]] = [
 
     # ("transformer_GPT2small", DUAL3060_GPT2),
     # ("transformer_nanoGPT", DUAL3060_NANO),
+
     ("transformer_miniLLaMA", {"run_tag": "dual3060-5M", **DUAL3060_LLAMA_5M}),
     ("transformer_miniLLaMA", {"run_tag": "dual3060-10M", **DUAL3060_LLAMA_10M}),
     ("transformer_miniLLaMA", {"run_tag": "dual3060-25M", **DUAL3060_LLAMA_25M}),

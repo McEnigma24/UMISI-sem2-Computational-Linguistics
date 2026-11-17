@@ -134,57 +134,10 @@ def best_eval_loss_from_save_dir(save_dir: Path | str | None, architecture: str)
     return loss if math.isfinite(loss) else None
 
 
-def distributed_rank() -> int:
-    return int(os.environ.get("RANK", "0"))
-
-
-def is_ddp_subprocess() -> bool:
-    if os.environ.get("RANK") is not None:
-        return True
-    local = os.environ.get("LOCAL_RANK", "").strip()
-    if local and local != "0":
-        return True
-    world = os.environ.get("WORLD_SIZE", "").strip()
-    if world and world != "1":
-        return True
-    return False
-
-
 def is_global_zero_process() -> bool:
-    if os.environ.get("RANK") is not None:
-        return distributed_rank() == 0
-    local = os.environ.get("LOCAL_RANK", "").strip()
-    if local:
-        return local == "0"
-    return True
+    """Lightning DDP ustawia procesom potomnym LOCAL_RANK≥1 (RANK nie jest ustawiany)."""
+    return os.environ.get("LOCAL_RANK", "0") == "0"
 
-
-def _save_dir_marker_path() -> Path:
-    job = os.environ.get("LANGUAGE_RNN_TRAIN_JOB", "0").strip() or "0"
-    state_root = os.environ.get("LANGUAGE_RNN_JOBSTATE_DIR", "").strip()
-    if state_root:
-        root = Path(state_root)
-    else:
-        root = project_root() / ".train_jobstate"
-    root.mkdir(parents=True, exist_ok=True)
-    return root / f"save_dir_job_{job}.txt"
-
-
-def _wait_for_shared_save_dir(marker: Path, *, timeout_s: float = 120.0) -> Path:
-    deadline = time.perf_counter() + timeout_s
-    while time.perf_counter() < deadline:
-        if marker.is_file():
-            text = marker.read_text(encoding="utf-8").strip()
-            if text:
-                return Path(text)
-        time.sleep(0.05)
-    raise TimeoutError(f"DDP: brak wspólnego save_dir (marker {marker}) po {timeout_s:.0f}s")
-
-
-def _publish_shared_save_dir(save_dir: Path, marker: Path) -> None:
-    resolved = str(save_dir.resolve())
-    marker.write_text(resolved, encoding="utf-8")
-    os.environ["LANGUAGE_RNN_SAVE_DIR"] = resolved
 
 
 def resolve_device(device: torch.device | str | None = None) -> torch.device:
@@ -1190,13 +1143,13 @@ def main(
     checkpoint_prune_post_training_mod: int,
     checkpoint_prune_post_training_tail: int,
     max_corpus_chars: int,
+    run_started_at: datetime | None = None,
 ) -> None:
+    # Przy DDP oba procesy muszą dostać to samo run_started_at — wtedy liczą identyczne ścieżki.
+    run_started_at = run_started_at or datetime.now()
     if tensorboard_dir is None:
         log_root = os.environ.get("TENSORBOARD_LOGDIR", "/workspace/runs")
-        tensorboard_dir = tensorboard_run_dir(log_root)
-    tb_from_job = os.environ.get("LANGUAGE_RNN_TENSORBOARD_DIR", "").strip()
-    if tb_from_job and is_ddp_subprocess():
-        tensorboard_dir = tb_from_job
+        tensorboard_dir = tensorboard_run_dir(log_root, run_started_at)
 
     device = resolve_device()
     rank_zero = is_global_zero_process()
@@ -1245,15 +1198,7 @@ def main(
     elif save_env:
         save_dir = Path(save_env)
     else:
-        marker = _save_dir_marker_path()
-        if is_ddp_subprocess() and not is_global_zero_process():
-            save_dir = _wait_for_shared_save_dir(marker)
-        else:
-            save_dir = resolve_save_dir(architecture, run_tag=run_tag)
-            _publish_shared_save_dir(save_dir, marker)
-
-    if not save_env:
-        os.environ["LANGUAGE_RNN_SAVE_DIR"] = str(save_dir.resolve())
+        save_dir = resolve_save_dir(architecture, when=run_started_at, run_tag=run_tag)
 
     save_dir.mkdir(parents=True, exist_ok=True)
     (save_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
@@ -1360,6 +1305,3 @@ def main(
     finally:
         if writer is not None:
             writer.close()
-        if rank_zero:
-            _save_dir_marker_path().unlink(missing_ok=True)
-            os.environ.pop("LANGUAGE_RNN_SAVE_DIR", None)

@@ -1,0 +1,34 @@
+Jeśli używasz PyTorch Lightning: Istnieje tam funkcja auto_scale_batch_size, która robi dokładnie to samo przed właściwym startem treningu.
+
+2. Automatyczne skalowanie Learning Rate (Twój "standard")
+Kiedy skrypt znajdzie już optymalny batch size, musisz dostosować do niego learning_rate. W uczeniu maszynowym używa się do tego tzw. Linear Scaling Rule (Liniowej Reguły Skalowania), spopularyzowanej w słynnej pracy badaczy z Facebook AI.
+
+Zasada jest prosta: jeśli zwiększasz batch size N razy, musisz zwiększyć learning rate N razy.
+
+Podajesz systemowi swój "standard" bazowy, na przykład:
+Bazowy Batch = 8, Bazowy LR = 0.0001 (1e-4)
+
+Jeśli skrypt na nowym modelu wciśnie w karty batch size równe 24, matematyka wygląda tak:
+
+Oblicza mnożnik: 24 / 8 = 3
+
+Mnoży bazowy LR: 0.0001 * 3 = 0.0003
+
+Jak to połączyć w skrypcie na noc? (Pułapka Hugging Face)
+Jest jeden haczyk. Jeśli użyjesz auto_find_batch_size=True w Hugging Face, on znajdzie optymalny batch już w trakcie odpalania Trainera, kiedy learning_rate zostało już zainicjowane. Skrypt nie przeskaluje go automatycznie za Ciebie.
+
+Aby to zautomatyzować na nocne kolejki modeli, najlepiej napisać prostą funkcję testową, która działa jako przedbieg (tzw. dummy run). Logika w Pythonie wyglądałaby następująco:
+
+Ustalasz bazę: base_bs = 8, base_lr = 1e-4.
+
+Pętla Try-Except: Skrypt bierze konkretny model z kolejki i próbuje przepuścić przez niego tylko jeden krok (forward + backward pass) zaczynając od ogromnego batcha (np. 128).
+
+Łapanie błędu: Jeśli dostanie błąd "CUDA out of memory", czyści pamięć (torch.cuda.empty_cache()), zmniejsza batch o połowę (albo o np. 4) i próbuje znowu.
+
+Sukces: Gdy przejdzie bez błędu, wie, że np. batch 32 jest bezpieczny.
+
+Kalkulacja LR: Skrypt odpala właściwe skalowanie: new_lr = base_lr * (znaleziony_batch / base_bs).
+
+Start treningu: Skrypt podaje znaleziony batch i wyliczony LR do właściwego Trainera i zaczyna wielogodzinny trening, po czym przechodzi do następnego modelu na liście.
+
+Dzięki takiemu wrapperowi wokół pętli treningowej możesz wrzucić do folderu 10 modeli o przeróżnych wielkościach (od 1M do 100M parametrów), wcisnąć "Enter" i pójść spać. Skrypt dla każdego z nich wyciśnie 100% z Twoich dwóch kart i dobierze matematycznie poprawny współczynnik uczenia.
