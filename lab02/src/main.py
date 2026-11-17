@@ -13,7 +13,7 @@ from log_print import log_print, reset_log_timer, tensorboard_run_dir
 # experiment = "simple_mlp"
 
 # experiment = "rnnRNN"
-experiment = "rnnLSTM"
+# experiment = "rnnLSTM"
 # experiment = "rnnGRU"
 
 # experiment = "rnnBaseLSTM"
@@ -97,50 +97,50 @@ if __name__ == "__main__":
     #     **LOCAL6G_AWD,
     # )
 
-    length = 25
-    infer.compare_models(
-        models=[
-            (LOCAL_BEST_LSTM, None),
-            (LOCAL_BEST_TRANSFORMER, None),
-        ],
-        prompts=[
-            ("AGH to ", length),
-            ("Język polski do cudowne dzieło ludzkości ", length),
-            ("Naprawę ? ", length),
-            ("Dobrze że mówisz, prawie bym zapomniał ", length),
+    # length = 25
+    # infer.compare_models(
+    #     models=[
+    #         (LOCAL_BEST_LSTM, None),
+    #         (LOCAL_BEST_TRANSFORMER, None),
+    #     ],
+    #     prompts=[
+    #         ("AGH to ", length),
+    #         ("Język polski do cudowne dzieło ludzkości ", length),
+    #         ("Naprawę ? ", length),
+    #         ("Dobrze że mówisz, prawie bym zapomniał ", length),
 
 
-            ("Obelixie zostaw ten menhir ", length),
-            ("na teutatesa ", length),
+    #         ("Obelixie zostaw ten menhir ", length),
+    #         ("na teutatesa ", length),
 
 
-            ("Smerfetka jest bezpieczna, została w ", length),
+    #         ("Smerfetka jest bezpieczna, została w ", length),
 
 
-            ("Uważaj wbijają na B, idź ", length),
-            ("Plantuje pakę, masz 30 sekund na ", length),
+    #         ("Uważaj wbijają na B, idź ", length),
+    #         ("Plantuje pakę, masz 30 sekund na ", length),
 
 
-            ("postęp w AI jest poje", length),
+    #         ("postęp w AI jest poje", length),
 
 
-            ("Mogę ci powiedzeć ale musiałbym cię potem ", length),
+    #         ("Mogę ci powiedzeć ale musiałbym cię potem ", length),
 
 
-            ("Geralt, a ty co powiesz? Jak ci sandaczyk smakuje? ", length),
-            ("Obudził się w tobie poeta? - Mhm. Chcesz usłyszeć fraszkę? - Pewnie - Lambert, Lambert, ty chuju ", length),
-            ("Na co się tak patrzysz ? ", length),
+    #         ("Geralt, a ty co powiesz? Jak ci sandaczyk smakuje? ", length),
+    #         ("Obudził się w tobie poeta? - Mhm. Chcesz usłyszeć fraszkę? - Pewnie - Lambert, Lambert, ty chuju ", length),
+    #         ("Na co się tak patrzysz ? ", length),
 
 
 
-            ("ale stara ta mapa uważaj bo się po ", length),
+    #         ("ale stara ta mapa uważaj bo się po ", length),
 
 
-            ("Sensem życia jest ", length),
-        ],
-        temperature=0.85,
-        run_tag="local6G-awd-vs-llama-wide",
-    )
+    #         ("Sensem życia jest ", length),
+    #     ],
+    #     temperature=0.85,
+    #     run_tag="local6G-awd-vs-llama-wide",
+    # )
 
 
 
