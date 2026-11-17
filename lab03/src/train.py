@@ -1,4 +1,4 @@
-"""Trening language RNN — ten sam układ co SimpleNet w old_stuff.mnist."""
+"""Trening language """
 
 from __future__ import annotations
 
@@ -15,12 +15,6 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from models.model_report import build_model_report
-from models.rnnAWDLSTM import rnnAWDLSTM
-from models.rnnBaseLSTM import rnnBaseLSTM
-from models.rnnGoldenLSTM import rnnGoldenLSTM
-from models.rnnGRU import rnnGRU
-from models.rnnLSTM import rnnLSTM
-from models.rnnRNN import rnnRNN
 from models.transformer_GPT2small import transformer_GPT2small
 from models.transformer_miniLLaMA import transformer_miniLLaMA
 from models.transformer_nanoGPT import transformer_nanoGPT
@@ -700,7 +694,7 @@ class LanguageModelNet(nn.Module):
             accelerator="gpu" if torch.cuda.is_available() else "cpu",
             devices=lightning_devices if torch.cuda.is_available() else 1,
             strategy=(
-                "ddp_spawn"
+                "ddp"
                 if lightning_devices > 1 and torch.cuda.is_available()
                 else "auto"
             ),

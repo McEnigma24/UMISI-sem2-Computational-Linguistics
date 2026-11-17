@@ -6,7 +6,6 @@ import os
 import subprocess
 
 import infer
-import old_stuff
 import train
 from _utils_.log_print import log_print, reset_log_timer, tensorboard_run_dir
 

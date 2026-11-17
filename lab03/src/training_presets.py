@@ -1,4 +1,4 @@
-"""Presety hparamów: PLGrid (big) + lokalne GPU 2× RTX 3060 12 GB."""
+"""Presety hparamów: PLGrid (big) + lokalne GPU 2x RTX 3060 12 GB."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ _DUAL3060_BASE = dict(
 
 _TRANSFORMER_COMMON = dict(
     dropout=0.1,
-    batch_size=12,
+    batch_size=12,              #   x2 bo tyle na 1 kartę idzie
     precision="bf16-mixed",
     learning_rate=6e-4,
 )
@@ -71,6 +71,16 @@ DUAL3060_LLAMA_10M: dict = {
     "ff_size": 768,
 }
 
+# ~5M param. (vocab=32k, tied emb.)
+DUAL3060_LLAMA_5M: dict = {
+    **_DUAL3060_BASE,
+    **_TRANSFORMER_COMMON,
+    "embed_dim": 144,
+    "hidden_size": 144,
+    "num_layers": 2,
+    "num_heads": 4,
+    "ff_size": 352,
+}
 
 
 # DUAL3060_GPT2: dict = {
@@ -98,8 +108,9 @@ DUAL3060_ALL: list[tuple[str, dict]] = [
     # ("transformer_GPT2small", DUAL3060_GPT2),
     # ("transformer_nanoGPT", DUAL3060_NANO),
 
-    ("transformer_miniLLaMA", DUAL3060_LLAMA_10M),
-    ("transformer_miniLLaMA", DUAL3060_LLAMA_25M),
-    ("transformer_miniLLaMA", DUAL3060_LLAMA_50M),
+    ("transformer_miniLLaMA", DUAL3060_LLAMA_5M),
+    # ("transformer_miniLLaMA", DUAL3060_LLAMA_10M),
+    # ("transformer_miniLLaMA", DUAL3060_LLAMA_25M),
+    # ("transformer_miniLLaMA", DUAL3060_LLAMA_50M),
     ("transformer_miniLLaMA", DUAL3060_LLAMA_110M),
 ]

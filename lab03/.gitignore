@@ -12,6 +12,8 @@ runs/*
 runs/plots/
 
 *.log
+nohup.out
+nohup.pid
 saved_models/
 !saved_models/.gitkeep
 checkpoints/

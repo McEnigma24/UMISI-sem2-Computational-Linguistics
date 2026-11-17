@@ -686,8 +686,15 @@ class TokenSeqDataset(Dataset):
         self._encoded: torch.Tensor | np.ndarray | None = None
 
         if isinstance(encoded, tuple) and len(encoded) == 3:
-            self._backing = encoded
-            length = encoded[2]
+            path, offset, declared = encoded
+            on_disk = int(np.memmap(path, dtype=ENCODED_DTYPE, mode="r").shape[0]) - int(offset)
+            length = min(int(declared), max(0, on_disk))
+            if length < declared:
+                log_print(
+                    f"TokenSeqDataset: {path.name} na dysku {on_disk:,} tokenów, "
+                    f"meta {declared:,} — używam {length:,}"
+                )
+            self._backing = (path, offset, length)
         elif isinstance(encoded, (torch.Tensor, np.ndarray)):
             self._encoded = encoded
             length = len(encoded)
@@ -705,13 +712,22 @@ class TokenSeqDataset(Dataset):
         return _open_token_memmap(self._backing)
 
     def __len__(self) -> int:
-        span = self._length - self.seq_len
-        return (span + self.stride - 1) // self.stride
+        # Pełne okno: start + seq_len + 1 tokenów (x ma seq_len, y ma seq_len).
+        if self._length <= self.seq_len:
+            return 0
+        return (self._length - self.seq_len - 1) // self.stride + 1
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         start = index * self.stride
+        need = self.seq_len + 1
         arr = self._mmap()
-        chunk = arr[start : start + self.seq_len + 1]
+        chunk = arr[start : start + need]
+        n = len(chunk)
+        if n < need:
+            raise IndexError(
+                f"TokenSeqDataset: indeks {index}, start={start}, "
+                f"potrzeba {need} tokenów, jest {n} (length={self._length})"
+            )
         if isinstance(chunk, torch.Tensor):
             x = chunk[:-1].to(dtype=torch.long)
             y = chunk[1:].to(dtype=torch.long)
