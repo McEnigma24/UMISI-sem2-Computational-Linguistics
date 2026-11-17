@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 _DUAL3060_BASE = dict(
-    run_tag="dual3060",
     lightning_devices=2,
 
     checkpoint_every=1,
     eval_every=1,
     checkpoint_prune_post_training_mod=1,
     checkpoint_prune_post_training_tail=1,
+    max_corpus_chars=0,  # 0 = pełny split train WikiText; >0 = limit znaków (testy)
 
     seq_len=512,
     window_stride=512,
 
-    epochs=10,              # time per model will limit this
+    epochs=3,               # max epochs - or interrupted by time_budget
     time_budget_min=90,     # max training time
 )
 
@@ -103,12 +103,14 @@ DUAL3060_LLAMA_5M: dict = {
 #     "ff_size": 4096,
 # }
 
+
 DUAL3060_ALL: list[tuple[str, dict]] = [
+
     # ("transformer_GPT2small", DUAL3060_GPT2),
     # ("transformer_nanoGPT", DUAL3060_NANO),
-    ("transformer_miniLLaMA", DUAL3060_LLAMA_5M),
-    ("transformer_miniLLaMA", DUAL3060_LLAMA_10M),
-    ("transformer_miniLLaMA", DUAL3060_LLAMA_25M),
-    ("transformer_miniLLaMA", DUAL3060_LLAMA_50M),
-    ("transformer_miniLLaMA", DUAL3060_LLAMA_110M),
+    ("transformer_miniLLaMA", {"run_tag": "dual3060-5M", **DUAL3060_LLAMA_5M}),
+    ("transformer_miniLLaMA", {"run_tag": "dual3060-10M", **DUAL3060_LLAMA_10M}),
+    ("transformer_miniLLaMA", {"run_tag": "dual3060-25M", **DUAL3060_LLAMA_25M}),
+    ("transformer_miniLLaMA", {"run_tag": "dual3060-50M", **DUAL3060_LLAMA_50M}),
+    ("transformer_miniLLaMA", {"run_tag": "dual3060-110M", **DUAL3060_LLAMA_110M}),
 ]

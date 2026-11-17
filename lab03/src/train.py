@@ -134,6 +134,59 @@ def best_eval_loss_from_save_dir(save_dir: Path | str | None, architecture: str)
     return loss if math.isfinite(loss) else None
 
 
+def distributed_rank() -> int:
+    return int(os.environ.get("RANK", "0"))
+
+
+def is_ddp_subprocess() -> bool:
+    if os.environ.get("RANK") is not None:
+        return True
+    local = os.environ.get("LOCAL_RANK", "").strip()
+    if local and local != "0":
+        return True
+    world = os.environ.get("WORLD_SIZE", "").strip()
+    if world and world != "1":
+        return True
+    return False
+
+
+def is_global_zero_process() -> bool:
+    if os.environ.get("RANK") is not None:
+        return distributed_rank() == 0
+    local = os.environ.get("LOCAL_RANK", "").strip()
+    if local:
+        return local == "0"
+    return True
+
+
+def _save_dir_marker_path() -> Path:
+    job = os.environ.get("LANGUAGE_RNN_TRAIN_JOB", "0").strip() or "0"
+    state_root = os.environ.get("LANGUAGE_RNN_JOBSTATE_DIR", "").strip()
+    if state_root:
+        root = Path(state_root)
+    else:
+        root = project_root() / ".train_jobstate"
+    root.mkdir(parents=True, exist_ok=True)
+    return root / f"save_dir_job_{job}.txt"
+
+
+def _wait_for_shared_save_dir(marker: Path, *, timeout_s: float = 120.0) -> Path:
+    deadline = time.perf_counter() + timeout_s
+    while time.perf_counter() < deadline:
+        if marker.is_file():
+            text = marker.read_text(encoding="utf-8").strip()
+            if text:
+                return Path(text)
+        time.sleep(0.05)
+    raise TimeoutError(f"DDP: brak wspólnego save_dir (marker {marker}) po {timeout_s:.0f}s")
+
+
+def _publish_shared_save_dir(save_dir: Path, marker: Path) -> None:
+    resolved = str(save_dir.resolve())
+    marker.write_text(resolved, encoding="utf-8")
+    os.environ["LANGUAGE_RNN_SAVE_DIR"] = resolved
+
+
 def resolve_device(device: torch.device | str | None = None) -> torch.device:
     if device is not None:
         return torch.device(device)
@@ -206,6 +259,7 @@ class LanguageModelNet(nn.Module):
         num_heads: int | None = None,
         ff_size: int | None = None,
         window_stride: int = 1,
+        max_corpus_chars: int = 0,
         prepare_data: bool = True,
     ):
         super().__init__()
@@ -219,9 +273,11 @@ class LanguageModelNet(nn.Module):
         self.num_heads = _default_num_heads(hidden_size, num_heads)
         self.ff_size = ff_size
         self.window_stride = window_stride
+        self.max_corpus_chars = max_corpus_chars
         self.model_name = architecture
         self.save_dir = Path(save_dir) if save_dir is not None else None
         self.metrics_logger: RunMetricsLogger | None = None
+        self.dataset_summary: dict | None = None
         self.train_ds = None
         self.val_ds = None
 
@@ -296,9 +352,16 @@ class LanguageModelNet(nn.Module):
         self.vocab_size = self.tokenizer.vocab_size
 
     def dataset_prep(self) -> None:
-        self.train_ds, self.val_ds, self.tokenizer, self.vocab_size = prepare_language_data(
+        (
+            self.train_ds,
+            self.val_ds,
+            self.tokenizer,
+            self.vocab_size,
+            self.dataset_summary,
+        ) = prepare_language_data(
             self.seq_len,
             window_stride=self.window_stride,
+            max_corpus_chars=self.max_corpus_chars,
         )
 
     def _data_loader(self, dataset, batch_size: int, shuffle: bool) -> DataLoader:
@@ -415,6 +478,7 @@ class LanguageModelNet(nn.Module):
             "num_heads": self.num_heads,
             "ff_size": self.ff_size,
             "window_stride": self.window_stride,
+            "max_corpus_chars": self.max_corpus_chars,
             "vocab_size": self.vocab_size,
             "tokenizer_dir": str(tokenizer_dir()),
         }
@@ -1052,6 +1116,7 @@ def _net_from_hparams(
         num_heads=hp.get("num_heads"),
         ff_size=hp.get("ff_size"),
         window_stride=hp.get("window_stride", 1),
+        max_corpus_chars=int(hp.get("max_corpus_chars", 0)),
         prepare_data=prepare_data,
     )
     net.model_name = hp.get("model_name", architecture)
@@ -1124,15 +1189,24 @@ def main(
     lightning_devices: int = 2,
     checkpoint_prune_post_training_mod: int,
     checkpoint_prune_post_training_tail: int,
+    max_corpus_chars: int,
 ) -> None:
     if tensorboard_dir is None:
         log_root = os.environ.get("TENSORBOARD_LOGDIR", "/workspace/runs")
         tensorboard_dir = tensorboard_run_dir(log_root)
+    tb_from_job = os.environ.get("LANGUAGE_RNN_TENSORBOARD_DIR", "").strip()
+    if tb_from_job and is_ddp_subprocess():
+        tensorboard_dir = tb_from_job
 
     device = resolve_device()
+    rank_zero = is_global_zero_process()
     log_print(f"Architektura: {architecture}")
     log_print(f"Urządzenie treningu: {device}")
     log_print(f"TensorBoard run: {tensorboard_dir}")
+    if max_corpus_chars < 1:
+        log_print("Korpus train: pełny split HF (max_corpus_chars=0)")
+    else:
+        log_print(f"Korpus train: limit {max_corpus_chars:,} znaków (max_corpus_chars)")
 
     resume_spec = resolve_resume_from_env_or_arg(resume)
     if resume_spec == "latest":
@@ -1171,7 +1245,15 @@ def main(
     elif save_env:
         save_dir = Path(save_env)
     else:
-        save_dir = resolve_save_dir(architecture, run_tag=run_tag)
+        marker = _save_dir_marker_path()
+        if is_ddp_subprocess() and not is_global_zero_process():
+            save_dir = _wait_for_shared_save_dir(marker)
+        else:
+            save_dir = resolve_save_dir(architecture, run_tag=run_tag)
+            _publish_shared_save_dir(save_dir, marker)
+
+    if not save_env:
+        os.environ["LANGUAGE_RNN_SAVE_DIR"] = str(save_dir.resolve())
 
     save_dir.mkdir(parents=True, exist_ok=True)
     (save_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
@@ -1189,27 +1271,32 @@ def main(
         "num_heads": num_heads,
         "ff_size": ff_size,
         "window_stride": window_stride,
+        "max_corpus_chars": max_corpus_chars,
     }
     net, resume_payload = build_net_for_run(device, save_dir, ckpt_path, architecture, **model_kwargs)
 
     metrics_logger = RunMetricsLogger(save_dir)
-    metrics_logger.write_meta(
-        architecture=architecture,
-        run_id=save_dir.name,
-        tensorboard_dir=tensorboard_dir,
-        hparams=net._training_hparams(),
-        resumed_from=resumed_from,
-    )
-    report = net._model_report()
-    metrics_logger.write_model_report(report, repr(net.rnn))
-    log_print(
-        f"Model: {report['params']:,} param, {report['model_bytes']:,} B, "
-        f"tying={report['weight_tying']}, dtype={report['dtype']}"
-    )
+    if rank_zero:
+        metrics_logger.write_meta(
+            architecture=architecture,
+            run_id=save_dir.name,
+            tensorboard_dir=tensorboard_dir,
+            hparams=net._training_hparams(),
+            resumed_from=resumed_from,
+        )
+        report = net._model_report()
+        metrics_logger.write_model_report(
+            report, repr(net.rnn), dataset=net.dataset_summary
+        )
+        log_print(
+            f"Model: {report['params']:,} param, {report['model_bytes']:,} B, "
+            f"tying={report['weight_tying']}, dtype={report['dtype']}"
+        )
     net.metrics_logger = metrics_logger
 
-    writer = SummaryWriter(tensorboard_dir)
-    net._log_custom_scalars_layout(writer)
+    writer = SummaryWriter(tensorboard_dir) if rank_zero else None
+    if writer is not None:
+        net._log_custom_scalars_layout(writer)
     ckpt_every = int(os.environ.get("LANGUAGE_RNN_CHECKPOINT_EVERY", str(checkpoint_every)))
     sample_every = int(os.environ.get("LANGUAGE_RNN_EVAL_EVERY", str(eval_every)))
     start_epoch = int(resume_payload["epoch"]) if resume_payload else 0
@@ -1234,38 +1321,45 @@ def main(
             lightning_devices=lightning_devices,
             tensorboard_dir=tensorboard_dir,
         )
-        final_ep = _max_epoch_in_checkpoints(save_dir / "checkpoints")
-        if final_ep > 0:
-            compact_epoch_checkpoints(
-                save_dir,
-                final_ep,
-                checkpoint_prune_post_training_mod=checkpoint_prune_post_training_mod,
-                checkpoint_prune_post_training_tail=checkpoint_prune_post_training_tail,
+        if rank_zero:
+            final_ep = _max_epoch_in_checkpoints(save_dir / "checkpoints")
+            if final_ep > 0:
+                compact_epoch_checkpoints(
+                    save_dir,
+                    final_ep,
+                    checkpoint_prune_post_training_mod=checkpoint_prune_post_training_mod,
+                    checkpoint_prune_post_training_tail=checkpoint_prune_post_training_tail,
+                )
+            eval_loss, eval_ppl = net.evall(
+                net, batch_size=batch_size, writer=writer, epoch=epochs
             )
-        eval_loss, eval_ppl = net.evall(
-            net, batch_size=batch_size, writer=writer, epoch=epochs
-        )
-        net.save_final(net, optimizer, epochs, eval_loss, eval_ppl, best_eval_loss)
-        train_segment_seconds = time.perf_counter() - t_run0
-        train_total_seconds = train_prior_seconds + train_segment_seconds
-        metrics_logger.write_timing(
-            train_total_seconds=train_total_seconds,
-            epochs=epochs,
-            start_epoch=start_epoch,
-            train_prior_seconds=train_prior_seconds,
-            train_segment_seconds=train_segment_seconds,
-        )
-        plot_training_run(save_dir)
-        if train_prior_seconds > 0:
+            net.save_final(net, optimizer, epochs, eval_loss, eval_ppl, best_eval_loss)
+            train_segment_seconds = time.perf_counter() - t_run0
+            train_total_seconds = train_prior_seconds + train_segment_seconds
+            metrics_logger.write_timing(
+                train_total_seconds=train_total_seconds,
+                epochs=epochs,
+                start_epoch=start_epoch,
+                train_prior_seconds=train_prior_seconds,
+                train_segment_seconds=train_segment_seconds,
+            )
+            plot_training_run(save_dir)
+            if train_prior_seconds > 0:
+                log_print(
+                    f"Czas treningu: {train_total_seconds:.1f}s "
+                    f"(wcześniej {train_prior_seconds:.1f}s + ta sesja {train_segment_seconds:.1f}s)"
+                )
+            else:
+                log_print(f"Czas treningu: {train_total_seconds:.1f}s")
             log_print(
-                f"Czas treningu: {train_total_seconds:.1f}s "
-                f"(wcześniej {train_prior_seconds:.1f}s + ta sesja {train_segment_seconds:.1f}s)"
+                f"Best eval loss w runie: {best_eval_loss:.4f} (pliki {architecture}_best_eval.*)"
             )
-        else:
-            log_print(f"Czas treningu: {train_total_seconds:.1f}s")
-        log_print(f"Best eval loss w runie: {best_eval_loss:.4f} (pliki {architecture}_best_eval.*)")
-        final, _stats = net.generate(net, seed="W polskim", length=500, temperature=0.85)
-        log_print("--- Ostateczna generacja (wagi final, nie best) ---")
-        log_print(final)
+            final, _stats = net.generate(net, seed="W polskim", length=500, temperature=0.85)
+            log_print("--- Ostateczna generacja (wagi final, nie best) ---")
+            log_print(final)
     finally:
-        writer.close()
+        if writer is not None:
+            writer.close()
+        if rank_zero:
+            _save_dir_marker_path().unlink(missing_ok=True)
+            os.environ.pop("LANGUAGE_RNN_SAVE_DIR", None)

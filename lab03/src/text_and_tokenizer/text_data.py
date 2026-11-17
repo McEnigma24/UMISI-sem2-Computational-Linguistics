@@ -82,6 +82,13 @@ def val_corpus_path() -> Path:
     return text_dir() / VAL_CORPUS_FILENAME
 
 
+def effective_max_corpus_chars(max_corpus_chars: int) -> int | None:
+    """Jawnie w presecie: 0 = pełny split train; >0 = limit znaków train."""
+    if max_corpus_chars < 1:
+        return None
+    return max_corpus_chars
+
+
 def wikitext_config() -> str:
     raw = os.environ.get("LANGUAGE_RNN_WIKITEXT_CONFIG", DEFAULT_WIKITEXT_CONFIG).strip()
     return raw or DEFAULT_WIKITEXT_CONFIG
@@ -119,7 +126,7 @@ def _write_dataset_split(
     return n_rows, n_chars
 
 
-def _materialize_corpus(dest: Path) -> Path:
+def _materialize_corpus(dest: Path, *, max_corpus_chars: int) -> Path:
     from datasets import load_dataset
 
     text_dir().mkdir(parents=True, exist_ok=True)
@@ -127,8 +134,9 @@ def _materialize_corpus(dest: Path) -> Path:
     val_dest = val_corpus_path()
     log_print(f"WikiText: {WIKITEXT_HF_ID} / {config} → {dest.parent}")
     ds = load_dataset(WIKITEXT_HF_ID, config)
-    max_chars = _max_corpus_chars_config()
-    train_rows, train_chars = _write_dataset_split(ds["train"], dest, max_chars=max_chars)
+    train_rows, train_chars = _write_dataset_split(
+        ds["train"], dest, max_chars=effective_max_corpus_chars(max_corpus_chars)
+    )
     val_rows, val_chars = _write_dataset_split(ds["validation"], val_dest, max_chars=None)
     log_print(
         f"Korpus train: {train_rows:,} wierszy, {train_chars:,} znaków "
@@ -138,7 +146,7 @@ def _materialize_corpus(dest: Path) -> Path:
     return dest
 
 
-def resolve_corpus_path() -> Path:
+def resolve_corpus_path(*, max_corpus_chars: int) -> Path:
     dest = default_corpus_path()
     val = val_corpus_path()
     if (
@@ -148,7 +156,7 @@ def resolve_corpus_path() -> Path:
         and val.stat().st_size > 100
     ):
         return dest
-    return _materialize_corpus(dest)
+    return _materialize_corpus(dest, max_corpus_chars=max_corpus_chars)
 
 
 def _inject_byte_tokens_json(tokenizer_json: Path) -> int:
@@ -182,11 +190,6 @@ def _encoded_cache_mode() -> str:
     if raw in ("force", "rebuild"):
         return "force"
     return "auto"
-
-
-def _max_corpus_chars_config() -> int | None:
-    raw = os.environ.get("LANGUAGE_RNN_MAX_CORPUS_CHARS", "").strip()
-    return int(raw) if raw else None
 
 
 def _train_frac() -> float:
@@ -445,12 +448,14 @@ def _get_train_val_encoded(
     corpus_path: Path,
     tokenizer: PreTrainedTokenizerFast,
     tokenizer_json: Path,
+    *,
+    max_corpus_chars: int,
 ) -> tuple[_TokenBacking, _TokenBacking, int]:
     """Wspólny train/val split tokenów — cache uint16 na dysku + w sesji procesu."""
     global _SESSION_CACHE_KEY, _SESSION_TRAIN_BACKING, _SESSION_VAL_BACKING, _SESSION_N_CHARS
 
     vocab_size = tokenizer.vocab_size
-    max_chars = _max_corpus_chars_config()
+    max_chars = effective_max_corpus_chars(max_corpus_chars)
     train_frac = _train_frac()
     wikitext_cfg = wikitext_config()
     val_path_corpus = val_corpus_path()
@@ -576,25 +581,26 @@ def _get_train_val_encoded(
     return train_back, val_back, n_chars
 
 
-def _apply_corpus_char_limit(text: str) -> str:
-    raw = os.environ.get("LANGUAGE_RNN_MAX_CORPUS_CHARS", "").strip()
-    if not raw:
+def _apply_corpus_char_limit(text: str, max_corpus_chars: int) -> str:
+    limit = effective_max_corpus_chars(max_corpus_chars)
+    if limit is None:
         return text
-    limit = int(raw)
     if len(text) <= limit:
         return text
-    log_print(
-        f"Obcinam korpus: {len(text):,} → {limit:,} znaków (LANGUAGE_RNN_MAX_CORPUS_CHARS)"
-    )
+    log_print(f"Obcinam korpus: {len(text):,} → {limit:,} znaków (max_corpus_chars={max_corpus_chars})")
     return text[:limit]
 
 
-def load_corpus_text(path: Path | None = None) -> str:
-    path = path or resolve_corpus_path()
+def load_corpus_text(
+    path: Path | None = None,
+    *,
+    max_corpus_chars: int,
+) -> str:
+    path = path or resolve_corpus_path(max_corpus_chars=max_corpus_chars)
     log_print(f"Wczytuję korpus {path.name}…")
     text = path.read_text(encoding="utf-8")
     text = text.replace("\r\n", "\n").replace("\r", "\n")
-    text = _apply_corpus_char_limit(text)
+    text = _apply_corpus_char_limit(text, max_corpus_chars)
     log_print(f"Korpus w pamięci: {len(text):,} znaków")
     return text
 
@@ -619,7 +625,7 @@ def load_tokenizer(
         log_print(f"Tokenizer z {store}")
         return tok
 
-    corpus_path = corpus_path or resolve_corpus_path()
+    corpus_path = corpus_path or resolve_corpus_path(max_corpus_chars=0)
     merge_vocab = max(vocab_size - BYTE_VOCAB_RESERVE, 512)
     log_print(
         f"Trenuję BPE byte_fallback (vocab={vocab_size:,}, merge={merge_vocab:,}) na {corpus_path.name}…"
@@ -753,23 +759,77 @@ def split_encoded(encoded: torch.Tensor, train_frac: float = 0.9) -> tuple[torch
     return encoded[:split].clone(), encoded[split:].clone()
 
 
+def dataset_run_summary(
+    *,
+    max_corpus_chars: int,
+    n_chars_train: int,
+    n_train_tokens: int,
+    n_val_tokens: int,
+    vocab_size: int,
+    window_stride: int,
+) -> dict[str, Any]:
+    cfg = wikitext_config()
+    val_path = val_corpus_path()
+    use_hf_val = val_path.is_file() and val_path.stat().st_size > 0
+    limit = effective_max_corpus_chars(max_corpus_chars)
+    if limit is None:
+        train_portion = "pełny split train z HF (bez obcięcia znaków)"
+    else:
+        train_portion = (
+            f"obcięty split train: max {limit:,} znaków (max_corpus_chars={max_corpus_chars:,})"
+        )
+    if use_hf_val:
+        val_portion = "pełny split validation z HF (nie obcinany max_corpus_chars)"
+        split_mode = "hf_validation"
+    else:
+        val_portion = f"val z końcówki tokenów train (train_frac, bez osobnego pliku val)"
+        split_mode = "token_frac"
+    return {
+        "hf_dataset": WIKITEXT_HF_ID,
+        "wikitext_config": cfg,
+        "split_mode": split_mode,
+        "max_corpus_chars": max_corpus_chars,
+        "train_portion": train_portion,
+        "val_portion": val_portion,
+        "train_chars_encoded": n_chars_train,
+        "train_tokens": n_train_tokens,
+        "val_tokens": n_val_tokens,
+        "vocab_size": vocab_size,
+        "window_stride": window_stride,
+    }
+
+
 def prepare_language_data(
     seq_len: int,
     *,
     window_stride: int = 1,
-) -> tuple[TokenSeqDataset, TokenSeqDataset, PreTrainedTokenizerFast, int]:
-    corpus_path = resolve_corpus_path()
+    max_corpus_chars: int,
+) -> tuple[TokenSeqDataset, TokenSeqDataset, PreTrainedTokenizerFast, int, dict[str, Any]]:
+    corpus_path = resolve_corpus_path(max_corpus_chars=max_corpus_chars)
     tokenizer = load_tokenizer(corpus_path)
     vocab_size = tokenizer.vocab_size
     tokenizer_json = tokenizer_dir() / "tokenizer.json"
-    train_back, val_back, n_chars = _get_train_val_encoded(corpus_path, tokenizer, tokenizer_json)
+    train_back, val_back, n_chars = _get_train_val_encoded(
+        corpus_path,
+        tokenizer,
+        tokenizer_json,
+        max_corpus_chars=max_corpus_chars,
+    )
     train_ds = TokenSeqDataset(train_back, seq_len, stride=window_stride)
     val_ds = TokenSeqDataset(val_back, seq_len, stride=window_stride)
     n_tokens = train_back[2] + val_back[2]
     cfg = wikitext_config()
+    summary = dataset_run_summary(
+        max_corpus_chars=max_corpus_chars,
+        n_chars_train=n_chars,
+        n_train_tokens=train_back[2],
+        n_val_tokens=val_back[2],
+        vocab_size=vocab_size,
+        window_stride=window_stride,
+    )
     log_print(
         f"Korpus: {WIKITEXT_HF_ID}/{cfg}, {n_chars:,} znaków (train) → {n_tokens:,} tokenów, "
         f"vocab={vocab_size}, stride={window_stride}, "
         f"train_windows={len(train_ds):,}, val_windows={len(val_ds):,}"
     )
-    return train_ds, val_ds, tokenizer, vocab_size
+    return train_ds, val_ds, tokenizer, vocab_size, summary

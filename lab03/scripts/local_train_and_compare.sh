@@ -4,5 +4,4 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 unset LANGUAGE_RNN_SAVE_DIR
-export LANGUAGE_RNN_MAX_CORPUS_CHARS="${LANGUAGE_RNN_MAX_CORPUS_CHARS:-12000000}"
 exec uv run python src/main.py

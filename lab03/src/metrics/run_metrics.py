@@ -130,11 +130,19 @@ class RunMetricsLogger:
             encoding="utf-8",
         )
 
-    def write_model_report(self, report: dict[str, Any], module_tree: str) -> None:
+    def write_model_report(
+        self,
+        report: dict[str, Any],
+        module_tree: str,
+        *,
+        dataset: dict[str, Any] | None = None,
+    ) -> None:
         payload = self.load_meta()
         if not payload:
             payload = {"run_id": self.save_dir.name}
         payload["model"] = report
+        if dataset is not None:
+            payload["dataset"] = dataset
         self.meta_path.write_text(
             json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
@@ -147,12 +155,32 @@ class RunMetricsLogger:
             f"model_bytes: {report.get('model_bytes'):,}",
             f"dtype: {report.get('dtype')}",
             f"weight_tying: {report.get('weight_tying')}",
-            "",
-            json.dumps(report, indent=2, ensure_ascii=False),
-            "",
-            "--- module tree ---",
-            module_tree,
         ]
+        if dataset:
+            lines.extend(
+                [
+                    "",
+                    "--- dataset ---",
+                    f"hf_dataset: {dataset.get('hf_dataset')}",
+                    f"wikitext_config: {dataset.get('wikitext_config')}",
+                    f"split_mode: {dataset.get('split_mode')}",
+                    f"max_corpus_chars: {dataset.get('max_corpus_chars')}  (0 = pełny split train)",
+                    f"train: {dataset.get('train_portion')}",
+                    f"val: {dataset.get('val_portion')}",
+                    f"train_chars_encoded: {dataset.get('train_chars_encoded', 0):,}",
+                    f"train_tokens: {dataset.get('train_tokens', 0):,}",
+                    f"val_tokens: {dataset.get('val_tokens', 0):,}",
+                ]
+            )
+        lines.extend(
+            [
+                "",
+                json.dumps(report, indent=2, ensure_ascii=False),
+                "",
+                "--- module tree ---",
+                module_tree,
+            ]
+        )
         summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

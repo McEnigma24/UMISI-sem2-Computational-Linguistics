@@ -12,6 +12,7 @@ def main() -> None:
     budget = float(os.environ.get("LANGUAGE_RNN_TIME_BUDGET_MIN", "1.5"))
     for architecture, preset in DUAL3060_ALL:
         p = dict(preset)
+        p["max_corpus_chars"] = 500_000
         p["time_budget_min"] = budget
         p["batch_size"] = max(2, p.get("batch_size", 8) // 4)
         print(f"\n=== smoke {architecture} ===", flush=True)

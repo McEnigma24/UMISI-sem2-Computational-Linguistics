@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 
 import infer
@@ -10,6 +11,10 @@ import train
 from _utils_.log_print import log_print, reset_log_timer, tensorboard_run_dir
 
 from training_presets import DUAL3060_ALL
+
+_TRAIN_JOB_ENV = "LANGUAGE_RNN_TRAIN_JOB"
+_TENSORBOARD_JOB_ENV = "LANGUAGE_RNN_TENSORBOARD_DIR"
+
 
 def main() -> str:
     reset_log_timer()
@@ -27,104 +32,39 @@ def main() -> str:
     subprocess.run(["clear"], check=False)
     return run_dir
 
-if __name__ == "__main__":
-    run_dir = main()
 
-
-    # DATASET load #
-    if os.environ.get("LANGUAGE_RNN_MAX_CORPUS_CHARS"):
-        log_print(
-            f"Limit korpusu: {int(os.environ['LANGUAGE_RNN_MAX_CORPUS_CHARS']):,} znaków "
-            f"(usuń env dla pełnego datasetu)"
-        )
-    else:
-        log_print("Korpus: pełny dataset (bez LANGUAGE_RNN_MAX_CORPUS_CHARS)")
-
-
-
-    # TRAIN THEM ALL #
-    for architecture, preset in DUAL3060_ALL:
-        # train.main(tensorboard_dir=run_dir, architecture=architecture, resume="latest", **preset)
+def _train_job(run_dir: str, job_index: int) -> None:
+    architecture, preset = DUAL3060_ALL[job_index]
+    jobstate = os.path.join(os.path.dirname(__file__), ".train_jobstate")
+    os.makedirs(jobstate, exist_ok=True)
+    os.environ[_TRAIN_JOB_ENV] = str(job_index)
+    os.environ[_TENSORBOARD_JOB_ENV] = run_dir
+    os.environ["LANGUAGE_RNN_JOBSTATE_DIR"] = jobstate
+    try:
         train.main(tensorboard_dir=run_dir, architecture=architecture, **preset)
+    finally:
+        os.environ.pop(_TRAIN_JOB_ENV, None)
+        os.environ.pop(_TENSORBOARD_JOB_ENV, None)
+        os.environ.pop("LANGUAGE_RNN_JOBSTATE_DIR", None)
 
 
-
-    # # COMPARE THEM ALL #
-    # length = 25
-    # infer.compare_models(
-    #     models=[(arch, None) for arch, _ in DUAL3060_ALL],
-    #     prompts=[
-    #         ("AGH to ", length),
-    #         ("Język polski do cudowne dzieło ludzkości ", length),
-    #         ("Naprawę ? ", length),
-    #         ("Dobrze że mówisz, prawie bym zapomniał ", length),
+if __name__ == "__main__":
+    # Lightning DDP uruchamia ten skrypt ponownie z LOCAL_RANK=1 przy pierwszym fit();
+    # oba procesy muszą przejść całą pętlę w tej samej kolejności (każdy Trainer.fit to wspólny krok).
+    if os.environ.get("LOCAL_RANK", "0") == "0":
+        shutil.rmtree(os.path.join(os.path.dirname(__file__), ".train_jobstate"), ignore_errors=True)
+    run_dir = main()
+    for job_index in range(len(DUAL3060_ALL)):
+        _train_job(run_dir, job_index)
 
 
-    #         ("Obelixie zostaw ten menhir ", length),
-    #         ("na teutatesa ", length),
-
-
-    #         ("Smerfetka jest bezpieczna, została w ", length),
-
-
-    #         ("Uważaj wbijają na B, idź ", length),
-    #         ("Plantuje pakę, masz 30 sekund na ", length),
-
-
-    #         ("postęp w AI jest poje", length),
-
-
-    #         ("Mogę ci powiedzeć ale musiałbym cię potem ", length),
-
-
-    #         ("Geralt, a ty co powiesz? Jak ci sandaczyk smakuje? ", length),
-    #         ("Obudził się w tobie poeta? - Mhm. Chcesz usłyszeć fraszkę? - Pewnie - Lambert, Lambert, ty chuju ", length),
-    #         ("Na co się tak patrzysz ? ", length),
-
-
-
-    #         ("ale stara ta mapa uważaj bo się po ", length),
-
-
-    #         ("Sensem życia jest ", length),
-    #     ],
-    #     temperature=0.85,
-    #     run_tag="dual3060-110M",
-    # )
-
-
-
-
-
-
-
-# seed = "Na zamku"
+# # COMPARE THEM ALL #
 # length = 25
-
-# infer.main(architecture="rnnRNN", seed=seed,
-#             checkpoint_path="saved_models/rnnRNN-2026.11.01-011843-quick-test/rnnRNN_final.pt",
-#             length=length,
-# )
-
-# infer.main(architecture="rnnLSTM", seed=seed,
-#             checkpoint_path="saved_models/rnnLSTM-2026.11.01-012810-quick-test/rnnLSTM_final.pt",
-#             length=length,
-# )
-
-# infer.main(architecture="rnnGRU", seed=seed,
-#             checkpoint_path="saved_models/rnnGRU-2026.11.01-014552-quick-test/rnnGRU_final.pt",
-#             length=length,
-# )
-
-
-
 # infer.compare_models(
-#     models=[
-#         ("rnnRNN", "saved_models/rnnRNN-2026.11.01-011843-quick-test/rnnRNN_final.pt"),
-#         ("rnnLSTM", "saved_models/rnnLSTM-2026.11.01-012810-quick-test/rnnLSTM_final.pt"),
-#         ("rnnGRU", "saved_models/rnnGRU-2026.11.01-014552-quick-test/rnnGRU_final.pt"),
+#     models=[(arch, None) for arch, _ in DUAL3060_ALL],
+#     prompts=[
+#         ("AGH to ", length),
 #     ],
-#     prompts=[(seed, length), ("W polskim", 50)],
 #     temperature=0.85,
-#     run_tag="manual-compare",
+#     run_tag="dual3060-110M",
 # )
