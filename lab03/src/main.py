@@ -4,25 +4,23 @@ from __future__ import annotations
 
 import os
 import subprocess
-import time
-from datetime import datetime, timedelta
 
 import infer
 import train
 from _utils_.log_print import log_print, reset_log_timer, tensorboard_run_dir
+from datetime import datetime
 
 from training_presets import DUAL3060_ALL
 
+from finetune_presets import FINETUNE_ALL
+import finetune
 
-def _session_started_at() -> datetime:
-    """Jeden timestamp na oba procesy DDP — drugi proces to re-exec main.py z kopią env."""
-    ts = os.environ.setdefault("LANGUAGE_RNN_SESSION_TS", str(int(time.time())))
-    return datetime.fromtimestamp(int(ts))
 
-def main(session_started_at: datetime) -> str:
+def main(session_started_at: datetime | None = None) -> str:
     reset_log_timer()
+    when = session_started_at or datetime.now()
     log_root = os.environ.get("TENSORBOARD_LOGDIR", "/workspace/runs")
-    run_dir = tensorboard_run_dir(log_root, session_started_at)
+    run_dir = tensorboard_run_dir(log_root, when)
 
     try:
         import torch
@@ -35,20 +33,25 @@ def main(session_started_at: datetime) -> str:
     subprocess.run(["clear"], check=False)
     return run_dir
 
-
-
 if __name__ == "__main__":
-    session_started_at = _session_started_at()
-    run_dir = main(session_started_at)
-    
-    # Oba procesy DDP idą przez tę pętlę w tej samej kolejności; +job_index s = osobny katalog na job.
-    for job_index, (architecture, preset) in enumerate(DUAL3060_ALL):
-        train.main(
-            tensorboard_dir=run_dir,
-            architecture=architecture,
-            run_started_at=session_started_at + timedelta(seconds=job_index),
-            **preset,
-        )
+    run_dir = main()
+
+
+    # for architecture, preset in DUAL3060_ALL:
+    #     train.main(tensorboard_dir=run_dir, architecture=architecture, **preset)
+
+    for preset in FINETUNE_ALL:
+        finetune.main(tensorboard_dir=run_dir, **preset)
+
+
+
+
+
+
+
+
+
+
 
 
 # # COMPARE THEM ALL #

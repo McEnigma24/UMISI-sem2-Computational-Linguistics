@@ -2,6 +2,8 @@
 # Zatrzymuje wrapper (nohup.pid) + kontener(y) docker compose run (dev) — tam jest trening na GPU.
 set -euo pipefail
 
+clear
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="${ROOT}/nohup.pid"
 

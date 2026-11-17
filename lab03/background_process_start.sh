@@ -2,6 +2,8 @@
 # Trening w tle → nohup.out; PID w nohup.pid; na końcu tail -f logu.
 set -euo pipefail
 
+clear
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 

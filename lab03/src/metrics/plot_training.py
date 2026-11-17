@@ -10,7 +10,14 @@ import pandas as pd
 import seaborn as sns
 
 from _utils_.log_print import log_print
-from metrics.run_metrics import META_FILENAME, METRICS_FILENAME, load_run_metrics
+from metrics.run_metrics import (
+    META_FILENAME,
+    METRICS_EVAL_FILENAME,
+    METRICS_FILENAME,
+    METRICS_STEPS_FILENAME,
+    TRAINING_REPORT_FILENAME,
+    load_run_metrics,
+)
 
 
 def _load_epoch_frame(save_dir: Path) -> pd.DataFrame:
@@ -170,9 +177,107 @@ def plot_training_run(save_dir: Path, *, dpi: int = 120) -> list[Path]:
     plt.close(fig)
     saved.append(out)
 
+    steps_path = save_dir / METRICS_STEPS_FILENAME
+    if steps_path.is_file():
+        sdf = pd.read_csv(steps_path)
+        if not sdf.empty and "train_loss" in sdf.columns:
+            fig, ax = plt.subplots(figsize=(9, 5))
+            ax.plot(sdf["step"], sdf["train_loss"], alpha=0.7, label="train_loss (step)")
+            eval_path = save_dir / METRICS_EVAL_FILENAME
+            if eval_path.is_file():
+                edf = pd.read_csv(eval_path)
+                if not edf.empty:
+                    ax.scatter(edf["step"], edf["eval_loss"], s=12, c="orange", label="eval (mid-epoch)")
+            ax.set_xlabel("step")
+            ax.set_ylabel("loss")
+            ax.set_title(f"Loss per step — {arch}")
+            ax.legend()
+            fig.tight_layout()
+            out = plots_dir / "loss_steps.png"
+            fig.savefig(out, dpi=dpi)
+            plt.close(fig)
+            saved.append(out)
+            if "lr" in sdf.columns:
+                fig, ax = plt.subplots(figsize=(9, 5))
+                ax.plot(sdf["step"], sdf["lr"], color="green")
+                ax.set_xlabel("step")
+                ax.set_ylabel("lr")
+                ax.set_title(f"Learning rate — {arch}")
+                fig.tight_layout()
+                out = plots_dir / "lr.png"
+                fig.savefig(out, dpi=dpi)
+                plt.close(fig)
+                saved.append(out)
+
+    test_m = meta.get("test_metrics") or {}
+    if test_m and not eval_df.empty:
+        fig, ax = plt.subplots(figsize=(7, 4))
+        last_eval = float(eval_df["eval_perplexity"].iloc[-1])
+        test_ppl = float(test_m.get("test_perplexity", float("nan")))
+        ax.bar(
+            ["val (last epoch)", "test"],
+            [last_eval, test_ppl],
+            color=["#4c72b0", "#dd8452"],
+        )
+        ax.set_ylabel("perplexity")
+        ax.set_title(f"Val vs test — {arch}")
+        fig.tight_layout()
+        out = plots_dir / "summary.png"
+        fig.savefig(out, dpi=dpi)
+        plt.close(fig)
+        saved.append(out)
+
     for p in saved:
         log_print(f"Wykres treningu → {p}")
     return saved
+
+
+def write_training_report(save_dir: Path) -> Path:
+    save_dir = Path(save_dir)
+    meta = _load_run_meta(save_dir)
+    rows = load_run_metrics(save_dir)
+    lines = [
+        f"run_id: {meta.get('run_id', save_dir.name)}",
+        f"architecture: {meta.get('architecture')}",
+        f"train_total_seconds: {meta.get('train_total_seconds')}",
+        f"epochs: {meta.get('epochs')}",
+    ]
+    fit = meta.get("fit") or {}
+    if fit:
+        lines.extend(
+            [
+                "--- training fit ---",
+                f"strategy: {fit.get('strategy')}",
+                f"per_gpu_batch: {fit.get('per_gpu_batch')}",
+                f"global_batch: {fit.get('global_batch')}",
+                f"learning_rate: {fit.get('learning_rate')}",
+                f"batch_source: {fit.get('batch_source')}",
+            ]
+        )
+    if rows:
+        best = min(
+            (r for r in rows if r.get("eval_loss") not in ("", None)),
+            key=lambda r: float(r["eval_loss"]),
+            default=None,
+        )
+        if best:
+            lines.append(
+                f"best_val: epoch={best.get('epoch')} loss={best.get('eval_loss')} "
+                f"ppl={best.get('eval_perplexity')}"
+            )
+    test_m = meta.get("test_metrics") or {}
+    if test_m:
+        lines.extend(
+            [
+                "--- test ---",
+                f"test_loss: {test_m.get('test_loss')}",
+                f"test_perplexity: {test_m.get('test_perplexity')}",
+            ]
+        )
+    out = save_dir / TRAINING_REPORT_FILENAME
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    log_print(f"Raport treningu → {out}")
+    return out
 
 
 def main() -> None:

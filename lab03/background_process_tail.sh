@@ -2,6 +2,8 @@
 # Status (ACTIVE/DEAD) → sleep → clear → tail -f nohup.out
 set -euo pipefail
 
+clear
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="${ROOT}/nohup.pid"
 LOG_FILE="${ROOT}/nohup.out"

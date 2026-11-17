@@ -36,6 +36,7 @@ services:
       UV_PYTHON_DOWNLOADS: automatic
       JUPYTER_NOTEBOOK_DIR: ${JUPYTER_NOTEBOOK_DIR:-/workspace/notebooks}
       TENSORBOARD_LOGDIR: ${TENSORBOARD_LOGDIR:-/workspace/runs}
+      HF_HOME: /workspace/build/hf-cache
       JUPYTER_PORT: ${JUPYTER_PORT:-8888}
       TENSORBOARD_PORT: ${TENSORBOARD_PORT:-6006}
 

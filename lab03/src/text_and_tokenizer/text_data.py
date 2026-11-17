@@ -23,6 +23,7 @@ WIKITEXT_HF_ID = "Salesforce/wikitext"
 DEFAULT_WIKITEXT_CONFIG = "wikitext-103-raw-v1"
 CORPUS_FILENAME = "corpus.txt"
 VAL_CORPUS_FILENAME = "val_corpus.txt"
+TEST_CORPUS_FILENAME = "test_corpus.txt"
 DEFAULT_VOCAB_SIZE = 32_000
 BYTE_VOCAB_RESERVE = 256
 DEFAULT_TRAIN_FRAC = 0.9
@@ -30,6 +31,7 @@ ENCODED_CACHE_VERSION = 3
 ENCODED_META_FILENAME = "meta.json"
 ENCODED_TRAIN_FILENAME = "train_ids.bin"
 ENCODED_VAL_FILENAME = "val_ids.bin"
+ENCODED_TEST_FILENAME = "test_ids.bin"
 ENCODED_DTYPE = np.uint16
 
 # Ten sam klucz w procesie → bez ponownego wczytywania z dysku (np. dwa train.main w main.py).
@@ -80,6 +82,10 @@ def default_corpus_path() -> Path:
 
 def val_corpus_path() -> Path:
     return text_dir() / VAL_CORPUS_FILENAME
+
+
+def test_corpus_path() -> Path:
+    return text_dir() / TEST_CORPUS_FILENAME
 
 
 def effective_max_corpus_chars(max_corpus_chars: int) -> int | None:
@@ -138,11 +144,14 @@ def _materialize_corpus(dest: Path, *, max_corpus_chars: int) -> Path:
         ds["train"], dest, max_chars=effective_max_corpus_chars(max_corpus_chars)
     )
     val_rows, val_chars = _write_dataset_split(ds["validation"], val_dest, max_chars=None)
+    test_dest = test_corpus_path()
+    test_rows, test_chars = _write_dataset_split(ds["test"], test_dest, max_chars=None)
     log_print(
         f"Korpus train: {train_rows:,} wierszy, {train_chars:,} znaków "
         f"({dest.name}, config={config})"
     )
     log_print(f"Korpus val: {val_rows:,} wierszy, {val_chars:,} znaków ({val_dest.name})")
+    log_print(f"Korpus test: {test_rows:,} wierszy, {test_chars:,} znaków ({test_dest.name})")
     return dest
 
 
@@ -759,12 +768,49 @@ def split_encoded(encoded: torch.Tensor, train_frac: float = 0.9) -> tuple[torch
     return encoded[:split].clone(), encoded[split:].clone()
 
 
+def _encode_corpus_file_to_bin(
+    corpus: Path,
+    out: Path,
+    tokenizer: PreTrainedTokenizerFast,
+) -> int:
+    out.parent.mkdir(parents=True, exist_ok=True)
+    n_tokens = 0
+    with corpus.open(encoding="utf-8") as fin, out.open("wb") as fout:
+        for line in fin:
+            text = line.strip()
+            if not text:
+                continue
+            ids = tokenizer.encode(text, add_special_tokens=False)
+            if ids:
+                np.asarray(ids, dtype=ENCODED_DTYPE).tofile(fout)
+                n_tokens += len(ids)
+    return n_tokens
+
+
+def get_test_token_backing(
+    tokenizer: PreTrainedTokenizerFast,
+) -> _TokenBacking | None:
+    test_corpus = test_corpus_path()
+    if not test_corpus.is_file() or test_corpus.stat().st_size < 10:
+        return None
+    out = encoded_dir() / ENCODED_TEST_FILENAME
+    if not out.is_file():
+        log_print(f"Kodowanie test → {out.name}")
+        n = _encode_corpus_file_to_bin(test_corpus, out, tokenizer)
+        if n <= 0:
+            return None
+        log_print(f"Test: {n:,} tokenów")
+    n_tokens = out.stat().st_size // np.dtype(ENCODED_DTYPE).itemsize
+    return (out, 0, int(n_tokens))
+
+
 def dataset_run_summary(
     *,
     max_corpus_chars: int,
     n_chars_train: int,
     n_train_tokens: int,
     n_val_tokens: int,
+    n_test_tokens: int,
     vocab_size: int,
     window_stride: int,
 ) -> dict[str, Any]:
@@ -794,6 +840,8 @@ def dataset_run_summary(
         "train_chars_encoded": n_chars_train,
         "train_tokens": n_train_tokens,
         "val_tokens": n_val_tokens,
+        "test_tokens": n_test_tokens,
+        "test_portion": "pełny split test z HF (WikiText)",
         "vocab_size": vocab_size,
         "window_stride": window_stride,
     }
@@ -804,7 +852,14 @@ def prepare_language_data(
     *,
     window_stride: int = 1,
     max_corpus_chars: int,
-) -> tuple[TokenSeqDataset, TokenSeqDataset, PreTrainedTokenizerFast, int, dict[str, Any]]:
+) -> tuple[
+    TokenSeqDataset,
+    TokenSeqDataset,
+    TokenSeqDataset | None,
+    PreTrainedTokenizerFast,
+    int,
+    dict[str, Any],
+]:
     corpus_path = resolve_corpus_path(max_corpus_chars=max_corpus_chars)
     tokenizer = load_tokenizer(corpus_path)
     vocab_size = tokenizer.vocab_size
@@ -817,6 +872,12 @@ def prepare_language_data(
     )
     train_ds = TokenSeqDataset(train_back, seq_len, stride=window_stride)
     val_ds = TokenSeqDataset(val_back, seq_len, stride=window_stride)
+    test_back = get_test_token_backing(tokenizer)
+    test_ds: TokenSeqDataset | None = None
+    n_test = 0
+    if test_back is not None and test_back[2] > seq_len + 1:
+        test_ds = TokenSeqDataset(test_back, seq_len, stride=window_stride)
+        n_test = test_back[2]
     n_tokens = train_back[2] + val_back[2]
     cfg = wikitext_config()
     summary = dataset_run_summary(
@@ -824,12 +885,14 @@ def prepare_language_data(
         n_chars_train=n_chars,
         n_train_tokens=train_back[2],
         n_val_tokens=val_back[2],
+        n_test_tokens=n_test,
         vocab_size=vocab_size,
         window_stride=window_stride,
     )
+    tw = len(test_ds) if test_ds is not None else 0
     log_print(
         f"Korpus: {WIKITEXT_HF_ID}/{cfg}, {n_chars:,} znaków (train) → {n_tokens:,} tokenów, "
         f"vocab={vocab_size}, stride={window_stride}, "
-        f"train_windows={len(train_ds):,}, val_windows={len(val_ds):,}"
+        f"train_windows={len(train_ds):,}, val_windows={len(val_ds):,}, test_windows={tw:,}"
     )
-    return train_ds, val_ds, tokenizer, vocab_size, summary
+    return train_ds, val_ds, test_ds, tokenizer, vocab_size, summary

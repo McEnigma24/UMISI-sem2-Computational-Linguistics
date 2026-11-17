@@ -21,6 +21,10 @@ METRICS_COLUMNS = (
 )
 
 METRICS_FILENAME = "metrics.csv"
+METRICS_STEPS_FILENAME = "metrics_steps.csv"
+METRICS_EVAL_FILENAME = "metrics_eval.csv"
+TEST_METRICS_FILENAME = "test_metrics.json"
+TRAINING_REPORT_FILENAME = "training_report.txt"
 META_FILENAME = "run_meta.json"
 SUMMARY_FILENAME = "model_summary.txt"
 RESUME_LIST_FILENAME = "resume_list.txt"
@@ -170,6 +174,32 @@ class RunMetricsLogger:
                     f"train_chars_encoded: {dataset.get('train_chars_encoded', 0):,}",
                     f"train_tokens: {dataset.get('train_tokens', 0):,}",
                     f"val_tokens: {dataset.get('val_tokens', 0):,}",
+                    f"test_tokens: {dataset.get('test_tokens', 0):,}",
+                ]
+            )
+        fit = payload.get("fit")
+        if fit:
+            lines.extend(
+                [
+                    "",
+                    "--- training fit ---",
+                    f"strategy: {fit.get('strategy')}",
+                    f"reason: {fit.get('reason')}",
+                    f"per_gpu_batch: {fit.get('per_gpu_batch')}",
+                    f"global_batch: {fit.get('global_batch')}",
+                    f"learning_rate: {fit.get('learning_rate')}",
+                    f"batch_source: {fit.get('batch_source')}",
+                    f"fingerprint: {fit.get('fingerprint')}",
+                ]
+            )
+        test_m = payload.get("test_metrics")
+        if test_m:
+            lines.extend(
+                [
+                    "",
+                    "--- test ---",
+                    f"test_loss: {test_m.get('test_loss')}",
+                    f"test_perplexity: {test_m.get('test_perplexity')}",
                 ]
             )
         lines.extend(
@@ -182,6 +212,45 @@ class RunMetricsLogger:
             ]
         )
         summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def write_fit(self, fit: dict[str, Any]) -> None:
+        payload = self.load_meta()
+        if not payload:
+            payload = {"run_id": self.save_dir.name}
+        payload["fit"] = fit
+        self.meta_path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        report = (self.save_dir / SUMMARY_FILENAME).read_text(encoding="utf-8") if (
+            self.save_dir / SUMMARY_FILENAME
+        ).is_file() else ""
+        if "--- training fit ---" not in report:
+            extra = [
+                "",
+                "--- training fit ---",
+                f"strategy: {fit.get('strategy')}",
+                f"reason: {fit.get('reason')}",
+                f"per_gpu_batch: {fit.get('per_gpu_batch')}",
+                f"global_batch: {fit.get('global_batch')}",
+                f"learning_rate: {fit.get('learning_rate')}",
+                f"batch_source: {fit.get('batch_source')}",
+                f"fingerprint: {fit.get('fingerprint')}",
+            ]
+            (self.save_dir / SUMMARY_FILENAME).write_text(report.rstrip() + "\n" + "\n".join(extra) + "\n", encoding="utf-8")
+
+    def append_fit_summary(self, fit_plan: Any, learning_rate: float) -> None:
+        _ = (fit_plan, learning_rate)
+
+    def write_test_metrics(self, test_metrics: dict[str, Any]) -> None:
+        path = self.save_dir / TEST_METRICS_FILENAME
+        path.write_text(json.dumps(test_metrics, indent=2) + "\n", encoding="utf-8")
+        payload = self.load_meta()
+        payload["test_metrics"] = test_metrics
+        self.meta_path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
 
 
 def load_run_metrics(save_dir: Path) -> list[dict[str, Any]]:

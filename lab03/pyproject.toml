@@ -19,6 +19,8 @@ dependencies = [
     "matplotlib>=3.8.0",
     "datasets>=3.0.0",
     "lightning>=2.5.0",
+    "peft>=0.14.0",
+    "torchmetrics>=1.6.0",
 ]
 
 [dependency-groups]

@@ -169,6 +169,18 @@ class transformer_miniLLaMA(nn.Module):
         elif isinstance(module, nn.Embedding):
             nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
+    def forward_hidden(self, x: torch.Tensor, *, attention_mask: torch.Tensor | None = None) -> torch.Tensor:
+        """Stany po norm_f — do klasyfikacji (pooling po ostatnim tokenie)."""
+        b, t = x.size()
+        if t > self.block_size:
+            x = x[:, -self.block_size :]
+            t = x.size(1)
+        pos = torch.arange(0, t, device=x.device)
+        h = self.drop(self.tok_emb(x))
+        for block in self.blocks:
+            h, _ = block(h, None, pos)
+        return self.norm_f(h)
+
     def forward(
         self,
         x: torch.Tensor,
