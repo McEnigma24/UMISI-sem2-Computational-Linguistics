@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import math
 import os
@@ -21,9 +22,10 @@ from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
 from _utils_.log_print import log_print, tensorboard_run_dir
-from _utils_.run_paths import models_root, resolve_save_dir, run_tag_from_dir_name
+from _utils_.run_paths import PRETRAIN_PHASE, arch_root, models_root, resolve_save_dir, run_tag_from_dir_name
 from _utils_.timing import sync_device
 from finetuning.cls_data import LABEL_NAMES, NUM_LABELS, collate_from_spec, prepare_cls_data
+from finetuning.hf_cache import offline_first
 from finetuning.cls_models import (
     CLS_ARCHITECTURE,
     apply_finetune_mode,
@@ -32,13 +34,21 @@ from finetuning.cls_models import (
     resolve_source,
 )
 from finetune_presets import FINETUNE_ALL
-from lit.dist_launch import ClsFitSpec, run_cls_fit
-from lit.hw_fit import choose_batch_and_strategy, scaled_learning_rate
+from lit.cls_callbacks import ClsRunLogCallback, cls_early_stopping
+from lit.cls_module import LitClassifier
+from lit.callbacks import TimeBudgetCallback
+from lit.lm_module import default_lightning_precision
+from lit.optim import scaled_learning_rate
 from metrics.run_metrics import METRICS_FILENAME, META_FILENAME, RunMetricsLogger
 from text_and_tokenizer import load_tokenizer
 from train import load_checkpoint_payload
 
-INIT_WEIGHTS_NAME = "_cls_init_weights.pt"
+
+def _release_gpu_memory() -> None:
+    """WSL2: pamięć zarezerwowana na GPU liczy się do commitu hosta, także gdy proces jej nie używa."""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 def _tokenizer_kind(resolved: dict[str, Any]) -> str:
@@ -73,15 +83,6 @@ def _validate_preset(preset: dict[str, Any]) -> None:
         for key in ("embed_dim", "hidden_size", "num_layers", "dropout"):
             if key not in preset:
                 raise ValueError(f"scratch wymaga {key}")
-
-
-def _fit_code_paths() -> list[Path]:
-    root = Path(__file__).resolve().parent
-    return [
-        root / "finetuning" / "cls_models.py",
-        root / "models" / "transformer_miniLLaMA.py",
-        root / "models" / "_rope.py",
-    ]
 
 
 def _estimate_total_steps(n_train: int, per_gpu_batch: int, devices: int, epochs: int) -> int:
@@ -219,13 +220,13 @@ def _plot_cls_training(save_dir: Path) -> list[Path]:
 
 
 def list_sources() -> None:
-    root = models_root()
+    pretrain = models_root() / PRETRAIN_PHASE
     log_print("Dostępne checkpointy LM (*_best_eval.pt):")
-    if root.is_dir():
-        for pt in sorted(root.glob("**/*_best_eval.pt")):
+    if pretrain.is_dir():
+        for pt in sorted(pretrain.glob("**/*_best_eval.pt")):
             tag = run_tag_from_dir_name(pt.parent.name)
             try:
-                payload = load_checkpoint_payload(pt)
+                payload = load_checkpoint_payload(pt, mmap=True)
                 hp = payload.get("hparams") or {}
                 ppl = payload.get("eval_perplexity")
                 params = hp.get("hidden_size")
@@ -240,17 +241,17 @@ def list_sources() -> None:
 
 
 def compare_runs(run_dirs: list[Path] | None = None, *, run_tags: list[str] | None = None) -> Path:
-    arch_root = models_root() / CLS_ARCHITECTURE
+    cls_runs_root = arch_root(CLS_ARCHITECTURE)
     candidates: list[Path] = []
     if run_dirs:
         candidates = [Path(p) for p in run_dirs]
     elif run_tags:
-        for child in arch_root.iterdir() if arch_root.is_dir() else []:
+        for child in cls_runs_root.iterdir() if cls_runs_root.is_dir() else []:
             if run_tag_from_dir_name(child.name) in run_tags:
                 candidates.append(child)
     else:
-        if arch_root.is_dir():
-            for child in arch_root.iterdir():
+        if cls_runs_root.is_dir():
+            for child in cls_runs_root.iterdir():
                 if (child / METRICS_FILENAME).is_file():
                     candidates.append(child)
     if not candidates:
@@ -324,12 +325,7 @@ def main(
     max_val_examples: int,
     max_test_examples: int,
     lightning_devices: int,
-    strategy: str,
-    ddp_min_per_gpu_batch: int,
-    batch_size: int | None,
-    batch_probe_max: int,
-    batch_probe_safety: float,
-    batch_probe_refresh: bool,
+    batch_size: int,
     lr_scaling: str,
     precision: str,
     epochs: int,
@@ -385,7 +381,7 @@ def main(
     hf_model_id = None
     if tok_kind == "hf":
         hf_model_id = resolved.get("model_id")
-        hf_tok = AutoTokenizer.from_pretrained(hf_model_id)
+        hf_tok = offline_first(hf_model_id, AutoTokenizer.from_pretrained, hf_model_id)
         if hf_tok.pad_token_id is None and hf_tok.eos_token_id is not None:
             hf_tok.pad_token = hf_tok.eos_token
     else:
@@ -439,8 +435,6 @@ def main(
     )
 
     save_dir = resolve_save_dir(CLS_ARCHITECTURE, run_tag=run_tag)
-    init_path = save_dir / INIT_WEIGHTS_NAME
-    torch.save(model.state_dict(), init_path)
 
     hparams = {
         "task": "classification",
@@ -471,109 +465,124 @@ def main(
     }
     metrics_logger.write_model_report(model_report, repr(model), dataset=ds_summary)
 
-    per_gpu = int(batch_size) if batch_size else 8
-    learning_rate = baseline_learning_rate
-    strategy_use = strategy if strategy != "auto" else "ddp"
-    fit_plan = choose_batch_and_strategy(
-        model,
-        architecture=CLS_ARCHITECTURE,
-        task="cls",
-        seq_len=max_len,
-        vocab_size=tok_spec.vocab_size,
-        precision=precision,
-        strategy=strategy,
-        ddp_min_per_gpu_batch=ddp_min_per_gpu_batch,
-        batch_size=batch_size,
-        batch_probe_max=batch_probe_max,
-        batch_probe_safety=batch_probe_safety,
-        batch_probe_refresh=batch_probe_refresh,
-        lightning_devices=lightning_devices,
-        module_tree=repr(model),
-        code_paths=_fit_code_paths(),
-        num_labels=NUM_LABELS,
-    )
+    per_gpu = int(batch_size)
+    devices = lightning_devices if torch.cuda.is_available() else 1
+    global_batch = per_gpu * devices
     learning_rate = scaled_learning_rate(
         baseline_batch_size=baseline_batch_size,
         baseline_learning_rate=baseline_learning_rate,
-        global_batch=fit_plan.global_batch,
+        global_batch=global_batch,
         lr_scaling=lr_scaling,
         learning_rate_max=learning_rate_max,
     )
-    strategy_use = fit_plan.strategy
-    per_gpu = fit_plan.per_gpu_batch
     log_print(
-        f"Fit: strategy={strategy_use} ({fit_plan.reason}), "
-        f"batch={per_gpu}/GPU (global {fit_plan.global_batch}), LR={learning_rate:.2e}"
+        f"Fit: batch={per_gpu}/GPU (global {global_batch}), LR={learning_rate:.2e} "
+        f"(baseline batch {baseline_batch_size}, lr {baseline_learning_rate})"
     )
     metrics_logger.write_fit(
         {
-            "strategy": strategy_use,
-            "reason": fit_plan.reason,
             "per_gpu_batch": per_gpu,
-            "global_batch": fit_plan.global_batch,
+            "global_batch": global_batch,
             "learning_rate": learning_rate,
-            "batch_source": fit_plan.batch_source,
-            "fingerprint": fit_plan.fingerprint_short,
+            "baseline_batch_size": baseline_batch_size,
+            "baseline_learning_rate": baseline_learning_rate,
+            "lr_scaling": lr_scaling,
         }
     )
 
-    total_steps = _estimate_total_steps(len(train_ds), per_gpu, lightning_devices, epochs)
+    total_steps = _estimate_total_steps(len(train_ds), per_gpu, devices, epochs)
     warmup_steps = max(1, int(total_steps * warmup_ratio))
 
-    spec = ClsFitSpec(
-        save_dir=str(save_dir),
-        architecture=CLS_ARCHITECTURE,
-        init_state_path=str(init_path),
-        source=source,
-        finetune_mode=finetune_mode,
-        unfreeze_last_n=unfreeze_last_n,
-        lora_r=lora_r,
-        lora_alpha=lora_alpha,
-        lora_dropout=lora_dropout,
-        scratch_kwargs=scratch_kwargs,
-        pooling=pooling,
-        head_hidden=head_hidden,
-        head_dropout=head_dropout,
-        max_len=max_len,
-        max_train_examples=max_train_examples,
-        max_val_examples=max_val_examples,
-        max_test_examples=max_test_examples,
-        tokenizer_kind=tok_kind,
-        hf_model_id=hf_model_id,
-        batch_size=per_gpu,
+    from datetime import timedelta
+
+    import lightning.pytorch as pl
+    from lightning.pytorch.loggers import TensorBoardLogger
+
+    model.cpu()
+    _release_gpu_memory()
+    os.environ.setdefault("NCCL_P2P_DISABLE", "1")
+    use_gpu = torch.cuda.is_available()
+    strat = "ddp_spawn" if devices > 1 and use_gpu else "auto"
+    prec = precision or default_lightning_precision("transformer_miniLLaMA")
+    log_print(f"Lightning fit: devices={devices}, strategy={strat}, batch/GPU={per_gpu}")
+
+    lit = LitClassifier(
+        model,
         learning_rate=learning_rate,
-        epochs=epochs,
-        start_epoch=0,
-        devices=lightning_devices if torch.cuda.is_available() else 1,
-        strategy=strategy_use,
-        precision=precision,
-        time_budget_min=time_budget_min,
         max_grad_norm=max_grad_norm,
-        tensorboard_dir=tensorboard_dir,
-        weight_decay=weight_decay,
         warmup_steps=warmup_steps,
         total_steps=total_steps,
-        early_stopping_patience=early_stopping_patience,
+        weight_decay=weight_decay,
+    )
+    collate = collate_from_spec(tok_spec)
+    pin = use_gpu
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=per_gpu,
+        shuffle=True,
+        collate_fn=collate,
+        pin_memory=pin,
+        num_workers=0,
+    )
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=per_gpu,
+        shuffle=False,
+        collate_fn=collate,
+        pin_memory=pin,
+        num_workers=0,
+    )
+    pl_logger = TensorBoardLogger(save_dir=tensorboard_dir, name="") if tensorboard_dir else False
+    run_cb = ClsRunLogCallback(
+        metrics_save_dir=str(save_dir),
+        max_epochs_cap=epochs,
         completed_epochs_at_resume=0,
         resume_best_f1=0.0,
+        architecture=CLS_ARCHITECTURE,
     )
-
-    os.environ.setdefault("NCCL_P2P_DISABLE", "1")
+    callbacks = [
+        TimeBudgetCallback(float(time_budget_min) * 60.0),
+        run_cb,
+        cls_early_stopping(patience=early_stopping_patience),
+    ]
+    trainer = pl.Trainer(
+        accelerator="gpu" if use_gpu else "cpu",
+        devices=devices,
+        strategy=strat,
+        precision=prec,
+        max_epochs=epochs,
+        max_time=timedelta(minutes=time_budget_min * 1.1),
+        check_val_every_n_epoch=1,
+        enable_progress_bar=False,
+        enable_checkpointing=False,
+        logger=pl_logger,
+        num_sanity_val_steps=0,
+        gradient_clip_val=max_grad_norm,
+        callbacks=callbacks,
+    )
     t_run0 = time.perf_counter()
-    result = run_cls_fit(spec, devices=spec.devices)
+    trainer.fit(lit, train_dataloaders=train_loader, val_dataloaders=val_loader)
     train_segment = time.perf_counter() - t_run0
-    if result is None:
-        raise RuntimeError("Fine-tuning zakończone bez _fit_result.pt")
-
-    best_path = save_dir / f"{CLS_ARCHITECTURE}_best_eval.pt"
-    if best_path.is_file():
-        payload = torch.load(best_path, map_location="cpu", weights_only=False)
-        model.load_state_dict(payload["model_state_dict"], strict=False)
-    elif result.get("model_state_dict"):
-        model.load_state_dict(result["model_state_dict"], strict=False)
+    result = {
+        "best_f1_macro": run_cb.best_f1_macro,
+        "early_stopped": run_cb.early_stopped,
+        "completed_epochs": run_cb.completed_epochs,
+    }
+    if not (save_dir / "metrics.csv").is_file():
+        raise RuntimeError(f"Brak metrics.csv po fine-tune w {save_dir}")
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    collate = collate_from_spec(tok_spec)
+    model = lit.model
+    model.to(device)
+    best_path = save_dir / f"{CLS_ARCHITECTURE}_best_eval.pt"
+    final_path = save_dir / f"{CLS_ARCHITECTURE}_final.pt"
+    weights_path = best_path if best_path.is_file() else final_path
+    if not weights_path.is_file():
+        raise FileNotFoundError(f"Brak {best_path.name} i {final_path.name} w {save_dir}")
+    payload = torch.load(weights_path, map_location="cpu", weights_only=False, mmap=True)
+    model.load_state_dict(payload["model_state_dict"], strict=True)
+    del payload
+    log_print(f"Test na wagach z {weights_path.name}")
     test_loader = DataLoader(test_ds, batch_size=per_gpu, shuffle=False, collate_fn=collate)
     test_metrics = evaluate_on_device(model, test_loader, device)
     timing = _inference_timing(
@@ -584,6 +593,9 @@ def main(
         bench_n=inference_bench_examples,
     )
     test_metrics.update(timing)
+    model.cpu()
+    del test_loader
+    _release_gpu_memory()
     metrics_logger.write_test_metrics(test_metrics)
     metrics_logger.write_timing(
         train_total_seconds=train_segment,
@@ -604,8 +616,8 @@ def main(
             ],
             "dataset": [json.dumps(ds_summary, ensure_ascii=False)],
             "training fit": [
-                f"strategy: {strategy_use}",
                 f"per_gpu_batch: {per_gpu}",
+                f"global_batch: {global_batch}",
                 f"learning_rate: {learning_rate}",
             ],
             "training": [

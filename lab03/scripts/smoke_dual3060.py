@@ -15,7 +15,6 @@ def main() -> None:
         p["max_corpus_chars"] = 500_000
         p["time_budget_min"] = budget
         p["epochs"] = 1
-        p["batch_probe_max"] = 32
         print(f"\n=== smoke {architecture} ===", flush=True)
         train.main(tensorboard_dir=None, architecture=architecture, **p)
 

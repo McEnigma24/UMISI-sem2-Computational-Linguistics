@@ -2,7 +2,7 @@
 # Użycie:
 #   ./start                    — nowy run
 #   ./start latest             — wznowienie z najnowszego runu tej architektury (nowy katalog)
-#   ./start saved_models/...   — wznowienie z podanego katalogu runu
+#   ./start saved_models/pretrain/...   — wznowienie z podanego katalogu runu
 #
 # Zmienna LANGUAGE_RNN_RESUME (latest lub ścieżka) — to samo co pierwszy argument.
 # Porównanie metryk (multi-line PNG): python src/metrics/plot_metrics.py

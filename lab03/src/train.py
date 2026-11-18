@@ -21,7 +21,7 @@ from models.transformer_nanoGPT import transformer_nanoGPT
 from text_and_tokenizer import load_tokenizer, prepare_language_data, tokenizer_dir
 from metrics.plot_training import plot_training_run, write_training_report
 from metrics.run_metrics import METRICS_FILENAME, RunMetricsLogger
-from lit.hw_fit import choose_batch_and_strategy, scaled_learning_rate
+from lit.optim import scaled_learning_rate
 from _utils_.log_print import log_print, tensorboard_run_dir
 from _utils_.timing import fmt_duration as _fmt_duration
 from _utils_.timing import log_eta_from_first_batch as _log_eta_from_first_batch
@@ -43,8 +43,9 @@ def checkpoint_run_dir(checkpoint_path: Path) -> Path:
     return checkpoint_path.parent
 
 
-def load_checkpoint_payload(path: Path | str) -> dict:
-    return torch.load(Path(path), map_location="cpu", weights_only=False)
+def load_checkpoint_payload(path: Path | str, *, mmap: bool = False) -> dict:
+    # mmap=True: tensory czytane leniwie z pliku; pliku nie wolno nadpisywać, dopóki payload żyje.
+    return torch.load(Path(path), map_location="cpu", weights_only=False, mmap=mmap)
 
 
 def _epoch_from_checkpoint_path(path: Path) -> int | None:
@@ -637,12 +638,17 @@ class LanguageModelNet(nn.Module):
         learning_rate: float,
         lightning_devices: int,
         tensorboard_dir: str | None,
-        strategy: str,
         val_checks_per_epoch: int,
         log_every_n_steps: int,
+        resume_checkpoint_path: str | None,
     ) -> tuple[torch.optim.Optimizer, float]:
-        from lit.dist_launch import LmFitSpec, run_lm_fit
-        from lit.lm_module import default_lightning_precision
+        from datetime import timedelta
+
+        import lightning.pytorch as pl
+        from lightning.pytorch.loggers import TensorBoardLogger
+
+        from lit.callbacks import ResumeLitCallback, RunLogCallback, TimeBudgetCallback
+        from lit.lm_module import LitLanguageModel, default_lightning_precision
 
         os.environ.setdefault("NCCL_P2P_DISABLE", "1")
 
@@ -669,62 +675,85 @@ class LanguageModelNet(nn.Module):
                 opt.load_state_dict(resume_payload["optimizer_state_dict"])
             return opt, best_eval_loss
 
-        if model.metrics_logger is None:
+        model.cpu()
+        model.tokenizer = None
+        metrics_logger = model.metrics_logger
+        if metrics_logger is None:
             raise RuntimeError("metrics_logger wymagany przed treningiem Lightning")
-        metrics_dir = str(model.metrics_logger.save_dir)
+        metrics_dir = str(metrics_logger.save_dir)
         prec = precision or default_lightning_precision(model.architecture)
+        use_gpu = torch.cuda.is_available()
+        devices = lightning_devices if use_gpu else 1
+        strat = "ddp_spawn" if devices > 1 and use_gpu else "auto"
         log_print(
-            f"Lightning fit: devices={lightning_devices}, strategy={strategy}, "
+            f"Lightning fit: devices={devices}, strategy={strat}, "
             f"batch/GPU={batch_size}, precision={prec}, budżet={time_budget_min:.0f} min"
         )
-        model_kwargs = {
-            "embed_dim": model.embed_dim,
-            "hidden_size": model.hidden_size,
-            "dropout": model.dropout,
-            "num_layers": model.num_layers,
-            "num_heads": model.num_heads,
-            "ff_size": model.ff_size,
-        }
-        spec = LmFitSpec(
-            save_dir=metrics_dir,
-            architecture=model.architecture,
-            model_kwargs=model_kwargs,
-            seq_len=model.seq_len,
-            window_stride=model.window_stride,
-            max_corpus_chars=model.max_corpus_chars,
+
+        lit = LitLanguageModel(model, learning_rate=learning_rate, max_grad_norm=max_grad_norm)
+        pin_memory = use_gpu
+        train_loader = DataLoader(
+            self.train_ds,
             batch_size=batch_size,
-            learning_rate=learning_rate,
-            epochs=epochs,
-            start_epoch=start_epoch,
-            devices=lightning_devices if torch.cuda.is_available() else 1,
-            strategy=strategy,
-            precision=prec,
+            shuffle=True,
+            pin_memory=pin_memory,
+            num_workers=0,
+        )
+        val_loader = DataLoader(
+            self.val_ds,
+            batch_size=batch_size,
+            shuffle=False,
+            pin_memory=pin_memory,
+            num_workers=0,
+        )
+        pl_logger = (
+            TensorBoardLogger(save_dir=tensorboard_dir, name="")
+            if tensorboard_dir
+            else False
+        )
+        fit_epochs = max(0, epochs - start_epoch)
+        budget_sec = float(time_budget_min) * 60.0
+        val_interval = 1.0 / max(1, val_checks_per_epoch)
+        run_cb = RunLogCallback(
+            metrics_save_dir=metrics_dir,
             checkpoint_every=checkpoint_every,
             eval_every=eval_every,
-            time_budget_min=float(time_budget_min),
-            max_grad_norm=max_grad_norm,
-            tensorboard_dir=tensorboard_dir,
-            resume_payload=resume_payload,
-            val_checks_per_epoch=val_checks_per_epoch,
-            log_every_n_steps=log_every_n_steps,
+            max_epochs_cap=epochs,
             completed_epochs_at_resume=start_epoch,
             resume_best_eval=best_eval_loss,
+            log_every_n_steps=log_every_n_steps,
+            architecture=model.architecture,
         )
-        result = run_lm_fit(spec, devices=spec.devices)
-        if result is None:
-            raise RuntimeError("Trening Lightning zakończony bez wyniku (_fit_result.pt)")
-        model.load_state_dict(result["model_state_dict"])
-        model.to(self.device)
+        callbacks = [
+            TimeBudgetCallback(budget_sec),
+            run_cb,
+            ResumeLitCallback(resume_checkpoint_path, load_optimizer=True),
+        ]
+        trainer = pl.Trainer(
+            accelerator="gpu" if use_gpu else "cpu",
+            devices=devices,
+            strategy=strat,
+            precision=prec,
+            max_epochs=fit_epochs,
+            max_time=timedelta(minutes=time_budget_min * 1.1),
+            check_val_every_n_epoch=max(1, eval_every),
+            val_check_interval=val_interval,
+            enable_progress_bar=False,
+            enable_checkpointing=False,
+            logger=pl_logger,
+            num_sanity_val_steps=0,
+            gradient_clip_val=max_grad_norm,
+            callbacks=callbacks,
+        )
+        trainer.fit(lit, train_dataloaders=train_loader, val_dataloaders=val_loader)
         if model.tokenizer is None:
             model.tokenizer_prep()
-        best_eval_loss = float(result.get("best_eval_loss", best_eval_loss))
-        opt_state = result.get("optimizer_state_dict") or {}
-        opt = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-        if opt_state:
-            try:
-                opt.load_state_dict(opt_state)
-            except Exception:
-                pass
+        model.metrics_logger = metrics_logger
+        model.to(self.device)
+        opt = run_cb.last_optimizer
+        if opt is None:
+            opt = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+        best_eval_loss = run_cb.best_eval_loss
         metrics_path = Path(metrics_dir) / "metrics.csv"
         if not metrics_path.is_file():
             raise RuntimeError(f"Brak {metrics_path.name} po treningu — logowanie metryk nie działało")
@@ -750,9 +779,9 @@ class LanguageModelNet(nn.Module):
         learning_rate: float = 3e-4,
         lightning_devices: int = 2,
         tensorboard_dir: str | None = None,
-        strategy: str = "ddp",
         val_checks_per_epoch: int = 4,
         log_every_n_steps: int = 50,
+        resume_checkpoint_path: str | None = None,
     ) -> tuple[torch.optim.Optimizer, float]:
         if time_budget_min is not None and self._should_use_lightning():
             return self._trainn_lightning(
@@ -769,9 +798,9 @@ class LanguageModelNet(nn.Module):
                 learning_rate=learning_rate,
                 lightning_devices=lightning_devices,
                 tensorboard_dir=tensorboard_dir,
-                strategy=strategy,
                 val_checks_per_epoch=val_checks_per_epoch,
                 log_every_n_steps=log_every_n_steps,
+                resume_checkpoint_path=resume_checkpoint_path,
             )
 
         model.to(self.device)
@@ -1148,18 +1177,13 @@ def main(
     dropout: float,
     seq_len: int,
     window_stride: int,
-    batch_size: int | None,
+    batch_size: int,
     time_budget_min: float | None,
     precision: str | None,
     lightning_devices: int,
     checkpoint_prune_post_training_mod: int,
     checkpoint_prune_post_training_tail: int,
     max_corpus_chars: int,
-    strategy: str,
-    ddp_min_per_gpu_batch: int,
-    batch_probe_max: int,
-    batch_probe_safety: float,
-    batch_probe_refresh: bool,
     baseline_batch_size: int,
     baseline_learning_rate: float,
     lr_scaling: str,
@@ -1255,59 +1279,37 @@ def main(
     )
     net.metrics_logger = metrics_logger
 
-    per_gpu = int(batch_size) if batch_size else 8
-    learning_rate = baseline_learning_rate
-    strategy_use = strategy if strategy != "auto" else "ddp"
+    per_gpu = int(batch_size)
+    devices = lightning_devices if torch.cuda.is_available() else 1
+    global_batch = per_gpu * devices
     meta_fit = metrics_logger.load_meta().get("fit")
-    fit_plan = None
     if resume_payload and meta_fit:
         per_gpu = int(meta_fit["per_gpu_batch"])
         learning_rate = float(meta_fit["learning_rate"])
-        strategy_use = str(meta_fit["strategy"])
-        log_print(f"Resume: batch={per_gpu}/GPU, LR={learning_rate}, strategy={strategy_use}")
+        global_batch = int(meta_fit.get("global_batch") or per_gpu * devices)
+        log_print(f"Resume: batch={per_gpu}/GPU, global={global_batch}, LR={learning_rate}")
     else:
-        fit_plan = choose_batch_and_strategy(
-            net,
-            architecture=architecture,
-            task="lm",
-            seq_len=seq_len,
-            vocab_size=net.vocab_size,
-            precision=precision or "bf16-mixed",
-            strategy=strategy,
-            ddp_min_per_gpu_batch=ddp_min_per_gpu_batch,
-            batch_size=batch_size,
-            batch_probe_max=batch_probe_max,
-            batch_probe_safety=batch_probe_safety,
-            batch_probe_refresh=batch_probe_refresh,
-            lightning_devices=lightning_devices,
-            module_tree=repr(net.rnn),
-        )
         learning_rate = scaled_learning_rate(
             baseline_batch_size=baseline_batch_size,
             baseline_learning_rate=baseline_learning_rate,
-            global_batch=fit_plan.global_batch,
+            global_batch=global_batch,
             lr_scaling=lr_scaling,
             learning_rate_max=learning_rate_max,
         )
-        strategy_use = fit_plan.strategy
-        per_gpu = fit_plan.per_gpu_batch
         log_print(
-            f"Fit: strategy={strategy_use} ({fit_plan.reason}), "
-            f"batch={per_gpu}/GPU (global {fit_plan.global_batch}), LR={learning_rate:.2e}, "
-            f"źródło batch={fit_plan.batch_source}"
+            f"Fit: batch={per_gpu}/GPU (global {global_batch}), LR={learning_rate:.2e} "
+            f"(baseline batch {baseline_batch_size}, lr {baseline_learning_rate})"
         )
         metrics_logger.write_fit(
             {
-                "strategy": strategy_use,
-                "reason": fit_plan.reason,
                 "per_gpu_batch": per_gpu,
-                "global_batch": fit_plan.global_batch,
+                "global_batch": global_batch,
                 "learning_rate": learning_rate,
-                "batch_source": fit_plan.batch_source,
-                "fingerprint": fit_plan.fingerprint_short,
+                "baseline_batch_size": baseline_batch_size,
+                "baseline_learning_rate": baseline_learning_rate,
+                "lr_scaling": lr_scaling,
             }
         )
-        metrics_logger.append_fit_summary(fit_plan, learning_rate)
 
     writer = SummaryWriter(tensorboard_dir)
     if writer is not None:
@@ -1322,6 +1324,7 @@ def main(
         if budget_min is None and env_budget:
             budget_min = float(env_budget)
 
+        resume_ckpt = str(ckpt_path) if ckpt_path is not None else None
         optimizer, best_eval_loss = net.trainn(
             net,
             epochs=epochs,
@@ -1335,9 +1338,9 @@ def main(
             learning_rate=learning_rate,
             lightning_devices=lightning_devices,
             tensorboard_dir=tensorboard_dir,
-            strategy=strategy_use,
             val_checks_per_epoch=val_checks_per_epoch,
             log_every_n_steps=log_every_n_steps,
+            resume_checkpoint_path=resume_ckpt,
         )
         final_ep = _max_epoch_in_checkpoints(save_dir / "checkpoints")
         if final_ep > 0:

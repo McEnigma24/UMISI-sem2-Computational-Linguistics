@@ -50,8 +50,27 @@ def run_tag_from_dir_name(dir_name: str) -> str | None:
     return None
 
 
+PRETRAIN_PHASE = "pretrain"
+FINETUNE_PHASE = "fine-tune"
+
+
 def models_root() -> Path:
     return project_root() / "saved_models"
+
+
+def phase_for_architecture(architecture: str) -> str:
+    if architecture.startswith("cls_"):
+        return FINETUNE_PHASE
+    return PRETRAIN_PHASE
+
+
+def arch_root(architecture: str) -> Path:
+    return models_root() / phase_for_architecture(architecture) / architecture
+
+
+def batch_fits_root(architecture: str) -> Path:
+    phase = phase_for_architecture(architecture)
+    return models_root() / phase / "batch_fits" / architecture
 
 
 def evaluations_root() -> Path:
@@ -68,7 +87,7 @@ def resolve_save_dir(
         root = Path(env)
     else:
         when = when or datetime.now()
-        root = models_root() / architecture / run_dir_name(run_tag, when)
+        root = arch_root(architecture) / run_dir_name(run_tag, when)
     root.mkdir(parents=True, exist_ok=True)
     (root / "checkpoints").mkdir(parents=True, exist_ok=True)
     return root
@@ -99,10 +118,16 @@ def _legacy_flat_run_dirs(architecture: str) -> list[Path]:
 
 
 def find_latest_run_dir(architecture: str, *, root: Path | None = None) -> Path:
-    arch_root = (root or models_root()) / architecture
+    arch_parent = root if root is not None else arch_root(architecture)
     nested: list[Path] = []
-    if arch_root.is_dir():
-        for child in arch_root.iterdir():
+    if arch_parent.is_dir():
+        for child in arch_parent.iterdir():
+            if child.is_dir() and _run_has_artifacts(child, architecture):
+                nested.append(child)
+
+    legacy_nested = models_root() / architecture
+    if legacy_nested.is_dir() and legacy_nested != arch_parent:
+        for child in legacy_nested.iterdir():
             if child.is_dir() and _run_has_artifacts(child, architecture):
                 nested.append(child)
 
@@ -114,7 +139,7 @@ def find_latest_run_dir(architecture: str, *, root: Path | None = None) -> Path:
         )
 
     def sort_key(p: Path) -> tuple[int, str, float]:
-        if p.parent.name == architecture:
+        if p.parent.name == architecture or p.parent == arch_root(architecture):
             return (0, p.name, 0.0)
         return (1, p.name, -p.stat().st_mtime)
 

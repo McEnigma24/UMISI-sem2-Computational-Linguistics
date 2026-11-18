@@ -183,13 +183,12 @@ class RunMetricsLogger:
                 [
                     "",
                     "--- training fit ---",
-                    f"strategy: {fit.get('strategy')}",
-                    f"reason: {fit.get('reason')}",
                     f"per_gpu_batch: {fit.get('per_gpu_batch')}",
                     f"global_batch: {fit.get('global_batch')}",
                     f"learning_rate: {fit.get('learning_rate')}",
-                    f"batch_source: {fit.get('batch_source')}",
-                    f"fingerprint: {fit.get('fingerprint')}",
+                    f"baseline_batch_size: {fit.get('baseline_batch_size')}",
+                    f"baseline_learning_rate: {fit.get('baseline_learning_rate')}",
+                    f"lr_scaling: {fit.get('lr_scaling')}",
                 ]
             )
         test_m = payload.get("test_metrics")
@@ -229,18 +228,14 @@ class RunMetricsLogger:
             extra = [
                 "",
                 "--- training fit ---",
-                f"strategy: {fit.get('strategy')}",
-                f"reason: {fit.get('reason')}",
                 f"per_gpu_batch: {fit.get('per_gpu_batch')}",
                 f"global_batch: {fit.get('global_batch')}",
                 f"learning_rate: {fit.get('learning_rate')}",
-                f"batch_source: {fit.get('batch_source')}",
-                f"fingerprint: {fit.get('fingerprint')}",
+                f"baseline_batch_size: {fit.get('baseline_batch_size')}",
+                f"baseline_learning_rate: {fit.get('baseline_learning_rate')}",
+                f"lr_scaling: {fit.get('lr_scaling')}",
             ]
             (self.save_dir / SUMMARY_FILENAME).write_text(report.rstrip() + "\n" + "\n".join(extra) + "\n", encoding="utf-8")
-
-    def append_fit_summary(self, fit_plan: Any, learning_rate: float) -> None:
-        _ = (fit_plan, learning_rate)
 
     def write_test_metrics(self, test_metrics: dict[str, Any]) -> None:
         path = self.save_dir / TEST_METRICS_FILENAME
@@ -327,18 +322,4 @@ def discover_metric_runs(models_root: Path) -> list[Path]:
     root = Path(models_root)
     if not root.is_dir():
         return []
-    out: list[Path] = []
-
-    def add_run_dir(path: Path) -> None:
-        if path.is_dir() and (path / METRICS_FILENAME).is_file():
-            out.append(path)
-
-    for child in sorted(root.iterdir()):
-        if not child.is_dir():
-            continue
-        if (child / METRICS_FILENAME).is_file():
-            add_run_dir(child)
-            continue
-        for grand in sorted(child.iterdir()):
-            add_run_dir(grand)
-    return out
+    return sorted({p.parent for p in root.rglob(METRICS_FILENAME) if p.parent.is_dir()})

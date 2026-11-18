@@ -42,3 +42,23 @@ def warmup_cosine_scheduler(
         return 0.5 * (1.0 + math.cos(math.pi * progress))
 
     return LambdaLR(optimizer, lr_lambda=lr_lambda)
+
+
+def scaled_learning_rate(
+    *,
+    baseline_batch_size: int,
+    baseline_learning_rate: float,
+    global_batch: int,
+    lr_scaling: str,
+    learning_rate_max: float,
+) -> float:
+    if baseline_batch_size < 1:
+        raise ValueError("baseline_batch_size >= 1")
+    ratio = global_batch / float(baseline_batch_size)
+    if lr_scaling == "linear":
+        lr = baseline_learning_rate * ratio
+    elif lr_scaling == "sqrt":
+        lr = baseline_learning_rate * math.sqrt(ratio)
+    else:
+        raise ValueError(f"lr_scaling: {lr_scaling!r}")
+    return min(lr, learning_rate_max)

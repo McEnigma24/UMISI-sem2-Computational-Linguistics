@@ -86,7 +86,12 @@ def plot_training_run(save_dir: Path, *, dpi: int = 120) -> list[Path]:
     meta = _load_run_meta(save_dir)
     if meta:
         arch = str(meta.get("architecture") or "")
-    if not arch and save_dir.parent.name not in ("saved_models", "model_evaluations"):
+    if not arch and save_dir.parent.name not in (
+        "saved_models",
+        "model_evaluations",
+        "pretrain",
+        "fine-tune",
+    ):
         arch = save_dir.parent.name
     if not arch:
         arch = save_dir.name.split("-", 1)[0]

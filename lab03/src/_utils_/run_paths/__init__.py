@@ -1,10 +1,15 @@
 """Ścieżki runów treningu i ewaluacji (saved_models, resume, checkpointy)."""
 
 from _utils_.run_paths.paths import (
+    FINETUNE_PHASE,
+    PRETRAIN_PHASE,
+    arch_root,
+    batch_fits_root,
     evaluations_root,
     find_latest_run_dir,
     latest_checkpoint,
     models_root,
+    phase_for_architecture,
     prior_train_seconds_from_resume_list,
     project_root,
     resolve_evaluation_dir,
@@ -17,10 +22,15 @@ from _utils_.run_paths.paths import (
 )
 
 __all__ = [
+    "FINETUNE_PHASE",
+    "PRETRAIN_PHASE",
+    "arch_root",
+    "batch_fits_root",
     "evaluations_root",
     "find_latest_run_dir",
     "latest_checkpoint",
     "models_root",
+    "phase_for_architecture",
     "prior_train_seconds_from_resume_list",
     "project_root",
     "resolve_evaluation_dir",

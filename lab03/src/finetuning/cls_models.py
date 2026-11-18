@@ -11,7 +11,8 @@ import torch.nn as nn
 from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer
 
 from _utils_.log_print import log_print
-from _utils_.run_paths import models_root, run_tag_from_dir_name
+from _utils_.run_paths import arch_root, run_tag_from_dir_name
+from finetuning.hf_cache import offline_first
 from finetuning.cls_data import NUM_LABELS
 from models.transformer_miniLLaMA import transformer_miniLLaMA
 from train import load_checkpoint_payload
@@ -181,7 +182,7 @@ def build_mini_llama_from_pt(
     head_hidden: int,
     head_dropout: float,
 ) -> tuple[MiniLlamSequenceClassifier, dict[str, Any]]:
-    payload = load_checkpoint_payload(checkpoint_path)
+    payload = load_checkpoint_payload(checkpoint_path, mmap=True)
     hp = dict(payload.get("hparams") or {})
     architecture = hp.get("architecture") or hp.get("model_name")
     if architecture != "transformer_miniLLaMA":
@@ -221,15 +222,16 @@ def build_mini_llama_from_pt(
         "eval_loss": payload.get("eval_loss"),
         "eval_perplexity": payload.get("eval_perplexity"),
     }
+    del payload
     return model, meta
 
 
 def find_lm_best_eval_by_run_tag(run_tag: str) -> Path:
-    arch_root = models_root() / "transformer_miniLLaMA"
-    if not arch_root.is_dir():
-        raise FileNotFoundError(f"Brak {arch_root}")
+    lm_runs_root = arch_root("transformer_miniLLaMA")
+    if not lm_runs_root.is_dir():
+        raise FileNotFoundError(f"Brak {lm_runs_root}")
     candidates: list[tuple[str, Path]] = []
-    for child in arch_root.iterdir():
+    for child in lm_runs_root.iterdir():
         if not child.is_dir():
             continue
         tag = run_tag_from_dir_name(child.name)
@@ -239,7 +241,7 @@ def find_lm_best_eval_by_run_tag(run_tag: str) -> Path:
         if p.is_file():
             candidates.append((child.name, p))
     if not candidates:
-        raise FileNotFoundError(f"Brak best_eval dla run_tag={run_tag!r} w {arch_root}")
+        raise FileNotFoundError(f"Brak best_eval dla run_tag={run_tag!r} w {lm_runs_root}")
     candidates.sort(key=lambda x: x[0], reverse=True)
     return candidates[0][1]
 
@@ -270,12 +272,15 @@ def resolve_source(source: str) -> dict[str, Any]:
 
 def build_hf_classifier(model_id: str) -> tuple[HfSequenceClassifier, Any]:
     log_print(f"HF model: {model_id}")
-    config = AutoConfig.from_pretrained(model_id, num_labels=NUM_LABELS)
-    core = AutoModelForSequenceClassification.from_pretrained(model_id, config=config)
-    if getattr(core.config, "pad_token_id", None) is None:
-        tok = AutoTokenizer.from_pretrained(model_id)
-        if tok.pad_token_id is not None:
-            core.config.pad_token_id = tok.pad_token_id
+    config = offline_first(model_id, AutoConfig.from_pretrained, model_id, num_labels=NUM_LABELS)
+    core = offline_first(
+        model_id, AutoModelForSequenceClassification.from_pretrained, model_id, config=config
+    )
+    tok = offline_first(model_id, AutoTokenizer.from_pretrained, model_id)
+    if tok.pad_token_id is None and tok.eos_token_id is not None:
+        tok.pad_token = tok.eos_token
+    if tok.pad_token_id is not None:
+        core.config.pad_token_id = int(tok.pad_token_id)
     return HfSequenceClassifier(core), core
 
 

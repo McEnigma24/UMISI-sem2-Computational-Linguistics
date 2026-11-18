@@ -110,7 +110,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    models_root = args.models_root or project_root() / "saved_models"
+    models_root = args.models_root or project_root() / "saved_models" / "pretrain"
     if args.runs:
         run_dirs = [p for p in args.runs if (Path(p) / "metrics.csv").is_file()]
     else:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from datasets import load_dataset
 from torch.utils.data import Dataset
 
 from _utils_.log_print import log_print
+from finetuning.hf_cache import offline_first
 
 CLS_DATASET_NAME = "cardiffnlp/tweet_eval"
 CLS_CONFIG = "sentiment"
@@ -32,11 +34,42 @@ def _clean_text(text: str) -> str:
 @dataclass
 class TokenizeSpec:
     kind: str  # hf | bpe
-    encode: Callable[[str], list[int]]
     vocab_size: int
     pad_token_id: int
     max_len: int
     tokenizer_repr: str
+    hf_model_id: str | None = None
+
+
+_ENCODE_CACHE: dict[str, Any] = {}
+
+
+def _hf_tok(model_id: str):
+    if model_id not in _ENCODE_CACHE:
+        from transformers import AutoTokenizer
+
+        tok = offline_first(model_id, AutoTokenizer.from_pretrained, model_id)
+        if tok.pad_token_id is None and tok.eos_token_id is not None:
+            tok.pad_token = tok.eos_token
+        _ENCODE_CACHE[model_id] = tok
+    return _ENCODE_CACHE[model_id]
+
+
+def _bpe_tok():
+    if "bpe" not in _ENCODE_CACHE:
+        from text_and_tokenizer import load_tokenizer
+
+        _ENCODE_CACHE["bpe"] = load_tokenizer()
+    return _ENCODE_CACHE["bpe"]
+
+
+def encode_cls_text(spec: TokenizeSpec, text: str) -> list[int]:
+    if spec.kind == "hf":
+        if not spec.hf_model_id:
+            raise ValueError("hf_model_id wymagany dla tokenizer_kind=hf")
+        tok = _hf_tok(spec.hf_model_id)
+        return tok.encode(text, add_special_tokens=True, truncation=False)
+    return _bpe_tok().encode(text, add_special_tokens=True)
 
 
 class TweetSentimentDataset(Dataset):
@@ -53,7 +86,7 @@ class TweetSentimentDataset(Dataset):
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         row = self.rows[idx]
-        ids = self.spec.encode(row["text"])
+        ids = encode_cls_text(self.spec, row["text"])
         if len(ids) > self.spec.max_len:
             ids = ids[: self.spec.max_len]
         return {"input_ids": ids, "label": int(row["label"])}
@@ -135,17 +168,15 @@ def _make_tokenize_spec(
                 tok.add_special_tokens({"pad_token": "[PAD]"})
         pad_id = int(tok.pad_token_id)
         vocab = int(tok.vocab_size)
-
-        def encode(text: str) -> list[int]:
-            return tok.encode(text, add_special_tokens=True, truncation=False)
+        model_id = str(getattr(tok, "name_or_path", "hf"))
 
         return TokenizeSpec(
             kind="hf",
-            encode=encode,
             vocab_size=vocab,
             pad_token_id=pad_id,
             max_len=max_len,
-            tokenizer_repr=str(getattr(tok, "name_or_path", "hf")),
+            tokenizer_repr=model_id,
+            hf_model_id=model_id,
         )
 
     if bpe_tokenizer is None:
@@ -155,16 +186,13 @@ def _make_tokenize_spec(
     pad_id = int(bpe_tokenizer.pad_token_id or 0)
     vocab = int(bpe_tokenizer.vocab_size)
 
-    def encode_bpe(text: str) -> list[int]:
-        return bpe_tokenizer.encode(text, add_special_tokens=True)
-
     return TokenizeSpec(
         kind="bpe",
-        encode=encode_bpe,
         vocab_size=vocab,
         pad_token_id=pad_id,
         max_len=max_len,
         tokenizer_repr="text_and_tokenizer BPE",
+        hf_model_id=None,
     )
 
 
@@ -187,7 +215,7 @@ def prepare_cls_data(
         log_print(f"Tweet Eval val: limit {max_val_examples:,} (max_val_examples)")
     if max_test_examples > 0:
         log_print(f"Tweet Eval test: limit {max_test_examples:,} (max_test_examples)")
-    ds = load_dataset(CLS_DATASET_NAME, CLS_CONFIG)
+    ds = offline_first(CLS_DATASET_NAME, load_dataset, CLS_DATASET_NAME, CLS_CONFIG)
     train_rows = _rows_from_split(ds["train"], max_examples=max_train_examples)
     val_rows = _rows_from_split(ds["validation"], max_examples=max_val_examples)
     test_rows = _rows_from_split(ds["test"], max_examples=max_test_examples)
@@ -213,10 +241,10 @@ def prepare_cls_data(
 
     truncated = 0
     for r in train_rows[: min(5000, len(train_rows))]:
-        if len(spec.encode(r["text"])) > max_len:
+        if len(encode_cls_text(spec, r["text"])) > max_len:
             truncated += 1
     trunc_pct = 100.0 * truncated / max(1, min(5000, len(train_rows)))
-    len_stats = _token_length_stats(train_rows, spec.encode)
+    len_stats = _token_length_stats(train_rows, lambda t: encode_cls_text(spec, t))
 
     summary = dataset_summary(
         train_ds=train_ds,
@@ -277,13 +305,14 @@ def dataset_summary(
     }
 
 
-def collate_from_spec(spec: TokenizeSpec):
-    def _fn(batch: list[dict]) -> dict[str, torch.Tensor]:
-        enriched = []
-        for item in batch:
-            d = dict(item)
-            d["pad_token_id"] = spec.pad_token_id
-            enriched.append(d)
-        return cls_collate_fn(enriched)
+def _collate_with_pad(batch: list[dict], *, pad_token_id: int) -> dict[str, torch.Tensor]:
+    enriched = []
+    for item in batch:
+        d = dict(item)
+        d["pad_token_id"] = pad_token_id
+        enriched.append(d)
+    return cls_collate_fn(enriched)
 
-    return _fn
+
+def collate_from_spec(spec: TokenizeSpec):
+    return functools.partial(_collate_with_pad, pad_token_id=spec.pad_token_id)

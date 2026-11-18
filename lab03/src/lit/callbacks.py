@@ -46,26 +46,9 @@ def _perplexity_for_log(loss: float) -> tuple[float, str]:
     return ppl, f"{ppl:.2f}"
 
 
-def _strategy_uses_fsdp(trainer: pl.Trainer) -> bool:
-    name = type(trainer.strategy).__name__.lower()
-    return "fsdp" in name
-
-
-def _full_state_dict(trainer: pl.Trainer, pl_module) -> dict[str, torch.Tensor]:
-    strategy = trainer.strategy
-    if hasattr(strategy, "lightning_module_state_dict"):
-        return dict(strategy.lightning_module_state_dict())
+def _net_state_dict(pl_module) -> dict[str, torch.Tensor]:
     net = pl_module.net if hasattr(pl_module, "net") else pl_module
     return dict(net.state_dict())
-
-
-def _optimizer_state_dict(trainer: pl.Trainer, optimizer: torch.optim.Optimizer) -> dict:
-    if _strategy_uses_fsdp(trainer):
-        return {}
-    try:
-        return optimizer.state_dict()
-    except Exception:
-        return {}
 
 
 class TimeBudgetCallback(Callback):
@@ -274,30 +257,27 @@ class RunLogCallback(Callback):
             )
 
         net = pl_module.net
-        if eval_loss < self.best_eval_loss:
+        if eval_loss < self.best_eval_loss and trainer.is_global_zero:
             self.best_eval_loss = eval_loss
             opt = pl_module.optimizers()
             if isinstance(opt, list):
                 opt = opt[0]
-            state = _full_state_dict(trainer, pl_module)
-            opt_state = _optimizer_state_dict(trainer, opt) if opt is not None else {}
-            if trainer.is_global_zero:
-                net.save_model_bundle_from_state(
-                    state,
-                    opt_state,
-                    self._logical_epoch(trainer),
-                    eval_loss,
-                    eval_ppl,
-                    self.best_eval_loss,
-                    stem="best_eval",
-                    export_onnx=False,
-                )
-                log_print(f"★ Nowy best eval: loss={eval_loss:.4f}, ppl={eval_ppl:.2f}")
+            state = _net_state_dict(pl_module)
+            opt_state = opt.state_dict() if opt is not None else {}
+            net.save_model_bundle_from_state(
+                state,
+                opt_state,
+                self._logical_epoch(trainer),
+                eval_loss,
+                eval_ppl,
+                self.best_eval_loss,
+                stem="best_eval",
+                export_onnx=False,
+            )
+            log_print(f"★ Nowy best eval: loss={eval_loss:.4f}, ppl={eval_ppl:.2f}")
 
-        fsdp = _strategy_uses_fsdp(trainer)
         ep = self._logical_epoch(trainer)
-        do_sample = not fsdp and (ep % self.eval_every == 0 or ep == 1)
-        if do_sample and trainer.is_global_zero:
+        if (ep % self.eval_every == 0 or ep == 1) and trainer.is_global_zero:
             sample, _ = net.generate(net, seed="W", length=200, temperature=0.8)
             log_print(f"Generacja (200 tok.): {sample[:200]!r}")
 
@@ -343,59 +323,62 @@ class RunLogCallback(Callback):
         if isinstance(opt, list):
             opt = opt[0]
         self.last_optimizer = opt
-        if ep % self.checkpoint_every == 0:
+        if ep % self.checkpoint_every == 0 and trainer.is_global_zero:
             ckpt_eval = float(self._last_eval_loss or self.best_eval_loss)
             ckpt_ppl = float(self._last_eval_ppl or math.exp(min(ckpt_eval, 20.0)))
-            state = _full_state_dict(trainer, pl_module)
-            opt_state = _optimizer_state_dict(trainer, opt) if opt is not None else {}
-            if trainer.is_global_zero:
-                pl_module.net.save_model_bundle_from_state(
-                    state,
-                    opt_state,
-                    ep,
-                    ckpt_eval if ckpt_eval == ckpt_eval else 0.0,
-                    ckpt_ppl,
-                    self.best_eval_loss,
-                    stem=f"epoch_{ep:04d}",
-                    export_onnx=False,
-                    checkpoints_subdir=True,
-                )
+            state = _net_state_dict(pl_module)
+            opt_state = opt.state_dict() if opt is not None else {}
+            pl_module.net.save_model_bundle_from_state(
+                state,
+                opt_state,
+                ep,
+                ckpt_eval if ckpt_eval == ckpt_eval else 0.0,
+                ckpt_ppl,
+                self.best_eval_loss,
+                stem=f"epoch_{ep:04d}",
+                export_onnx=False,
+                checkpoints_subdir=True,
+            )
 
 
 class ResumeLitCallback(Callback):
     def __init__(
         self,
-        payload: dict | None,
+        checkpoint_path: str | None,
         *,
         load_optimizer: bool = True,
     ) -> None:
         super().__init__()
-        self.payload = payload
+        self.checkpoint_path = checkpoint_path
         self.load_optimizer = load_optimizer
 
     def on_fit_start(self, trainer: pl.Trainer, pl_module) -> None:
-        if self.payload is None:
+        if not self.checkpoint_path:
             return
-        state = self.payload["model_state_dict"]
+        path = Path(self.checkpoint_path)
+        if not path.is_file():
+            if trainer.is_global_zero:
+                log_print(f"Resume: brak pliku {path}")
+            return
+        payload = torch.load(path, map_location="cpu", weights_only=False)
+        state = payload["model_state_dict"]
         if hasattr(pl_module, "net"):
             pl_module.net.load_state_dict(state)
         else:
             pl_module.load_state_dict(state, strict=False)
-        if not self.load_optimizer or _strategy_uses_fsdp(trainer):
-            if trainer.is_global_zero and _strategy_uses_fsdp(trainer):
-                log_print("Resume: stan optymalizatora pominięty (FSDP)")
-            elif trainer.is_global_zero:
-                log_print(f"Lightning: wczytano wagi (epoka {self.payload.get('epoch')})")
+        if not self.load_optimizer:
+            if trainer.is_global_zero:
+                log_print(f"Lightning: wczytano wagi (epoka {payload.get('epoch')})")
             return
         opt = pl_module.optimizers()
         if isinstance(opt, list):
             opt = opt[0]
         try:
-            opt.load_state_dict(self.payload["optimizer_state_dict"])
+            opt.load_state_dict(payload["optimizer_state_dict"])
         except Exception:
             pass
         if trainer.is_global_zero:
-            log_print(f"Lightning: wczytano resume (epoka {self.payload.get('epoch')})")
+            log_print(f"Lightning: wczytano resume (epoka {payload.get('epoch')})")
 
 
 def trainer_is_global_zero() -> bool:

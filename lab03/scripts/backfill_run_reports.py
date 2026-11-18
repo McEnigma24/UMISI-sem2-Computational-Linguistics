@@ -93,7 +93,7 @@ def main() -> None:
     parser.add_argument(
         "--models-root",
         type=Path,
-        default=Path(__file__).resolve().parents[1] / "saved_models" / "transformer_miniLLaMA",
+        default=Path(__file__).resolve().parents[1] / "saved_models" / "pretrain" / "transformer_miniLLaMA",
     )
     parser.add_argument(
         "--runs-root",
