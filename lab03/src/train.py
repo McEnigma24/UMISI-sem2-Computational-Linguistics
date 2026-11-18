@@ -690,7 +690,6 @@ class LanguageModelNet(nn.Module):
             f"batch/GPU={batch_size}, precision={prec}, budżet={time_budget_min:.0f} min"
         )
 
-        lit = LitLanguageModel(model, learning_rate=learning_rate, max_grad_norm=max_grad_norm)
         pin_memory = use_gpu
         train_loader = DataLoader(
             self.train_ds,
@@ -713,6 +712,14 @@ class LanguageModelNet(nn.Module):
         )
         fit_epochs = max(0, epochs - start_epoch)
         budget_sec = float(time_budget_min) * 60.0
+        steps_per_epoch = math.ceil(len(self.train_ds) / max(1, batch_size * devices))
+        total_steps = steps_per_epoch * fit_epochs
+        lit = LitLanguageModel(
+            model,
+            learning_rate=learning_rate,
+            max_grad_norm=max_grad_norm,
+            total_steps=total_steps,
+        )
         val_interval = 1.0 / max(1, val_checks_per_epoch)
         run_cb = RunLogCallback(
             metrics_save_dir=metrics_dir,

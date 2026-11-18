@@ -52,12 +52,12 @@ def _net_state_dict(pl_module) -> dict[str, torch.Tensor]:
 
 
 class TimeBudgetCallback(Callback):
-    def __init__(self, budget_seconds: float, warmup_probe_steps: int = 50) -> None:
+    """Awaryjny limit czasu treningu (nie wpływa na harmonogram LR)."""
+
+    def __init__(self, budget_seconds: float) -> None:
         super().__init__()
         self.budget_seconds = budget_seconds
-        self.warmup_probe_steps = warmup_probe_steps
         self._t0: float | None = None
-        self._planned_logged = False
 
     def on_fit_start(self, trainer: pl.Trainer, pl_module) -> None:
         self._t0 = time.perf_counter()
@@ -65,27 +65,11 @@ class TimeBudgetCallback(Callback):
     def on_train_batch_end(
         self, trainer: pl.Trainer, pl_module, outputs, batch, batch_idx: int
     ) -> None:
-        step = trainer.global_step
-        if (
-            trainer.is_global_zero
-            and not self._planned_logged
-            and step >= self.warmup_probe_steps
-            and self._t0 is not None
-            and hasattr(pl_module, "set_total_steps")
-        ):
-            elapsed = time.perf_counter() - self._t0
-            sps = step / max(elapsed, 1e-6)
-            planned = max(step, int(self.budget_seconds * sps))
-            pl_module.set_total_steps(planned)
-            n_batch = max(1, trainer.num_training_batches)
-            log_print(
-                f"plan treningu: ~{planned:,} kroków ≈ {planned / n_batch:.1f} epok "
-                f"w budżecie {fmt_duration(self.budget_seconds)} ({sps:.2f} krok/s)"
-            )
-            self._planned_logged = True
         if self._t0 is not None and (time.perf_counter() - self._t0) >= self.budget_seconds:
             if trainer.is_global_zero:
-                log_print(f"Budżet czasu wyczerpany ({fmt_duration(self.budget_seconds)}) — stop treningu")
+                log_print(
+                    f"Awaryjny limit czasu ({fmt_duration(self.budget_seconds)}) — przerywam trening"
+                )
             trainer.should_stop = True
 
 

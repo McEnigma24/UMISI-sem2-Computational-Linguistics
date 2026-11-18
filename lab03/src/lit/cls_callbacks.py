@@ -1,4 +1,4 @@
-"""Callbacki Lightning dla klasyfikacji (CSV, best F1, early stopping)."""
+"""Callbacki Lightning dla klasyfikacji (CSV, best F1, checkpoint co epokę)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 import lightning.pytorch as pl
 import torch
-from lightning.pytorch.callbacks import Callback, EarlyStopping
+from lightning.pytorch.callbacks import Callback
 
 from _utils_.log_print import log_print
 from _utils_.timing import log_eta_from_first_batch, sync_device
@@ -56,7 +56,6 @@ class ClsRunLogCallback(Callback):
         self._epoch_train_n = 0
         self._last_eval: dict[str, float] = {}
         self.last_optimizer: torch.optim.Optimizer | None = None
-        self.early_stopped = False
         self.completed_epochs = 0
 
     def _logical_epoch(self, trainer: pl.Trainer) -> int:
@@ -168,6 +167,14 @@ class ClsRunLogCallback(Callback):
             f"Epoka {ep}: train_loss={train_loss:.4f}, train_acc={train_acc:.4f} "
             f"({train_seconds:.1f}s train, {eval_seconds:.1f}s val)"
         )
+        ckpt_dir = self.metrics_save_dir / "checkpoints"
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        state = _unwrap_classifier_state(pl_module)
+        torch.save(
+            {"epoch": ep, "model_state_dict": state, **self._last_eval},
+            ckpt_dir / f"epoch_{ep:04d}.pt",
+        )
+        del state
         self.last_optimizer = opt
 
     def on_train_end(self, trainer: pl.Trainer, pl_module) -> None:
@@ -182,16 +189,3 @@ class ClsRunLogCallback(Callback):
         final_path = self.metrics_save_dir / f"{self.architecture}_final.pt"
         torch.save(payload, final_path)
         del payload, state
-
-    def on_fit_end(self, trainer: pl.Trainer, pl_module) -> None:
-        if trainer.is_global_zero and trainer.should_stop:
-            self.early_stopped = True
-
-
-def cls_early_stopping(*, patience: int) -> EarlyStopping:
-    return EarlyStopping(
-        monitor="val/f1_macro",
-        mode="max",
-        patience=patience,
-        check_on_train_epoch_end=False,
-    )

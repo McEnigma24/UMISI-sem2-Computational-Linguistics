@@ -7,7 +7,7 @@ _DUAL3060_BASE = dict(
     # FULL #
         max_corpus_chars=0,
         epochs=3,
-        time_budget_min=90,
+        time_budget_min=1440,
 
     # SMOKE #
         # max_corpus_chars=100_000,

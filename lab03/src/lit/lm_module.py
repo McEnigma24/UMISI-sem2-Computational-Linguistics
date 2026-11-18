@@ -22,7 +22,7 @@ class LitLanguageModel(pl.LightningModule):
         learning_rate: float,
         max_grad_norm: float = 1.0,
         warmup_steps: int = 500,
-        total_steps: int | None = None,
+        total_steps: int,
         weight_decay: float = 0.1,
     ) -> None:
         super().__init__()
@@ -30,7 +30,7 @@ class LitLanguageModel(pl.LightningModule):
         self.learning_rate = learning_rate
         self.max_grad_norm = max_grad_norm
         self.warmup_steps = warmup_steps
-        self.total_steps = total_steps or 10_000_000
+        self.total_steps = total_steps
         self.weight_decay = weight_decay
         self.cost_function = net.cost_function
         self._tokens_per_step = 0
@@ -77,10 +77,6 @@ class LitLanguageModel(pl.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {"scheduler": scheduler, "interval": "step", "frequency": 1},
         }
-
-    def set_total_steps(self, total_steps: int) -> None:
-        self.total_steps = total_steps
-
 
 TRANSFORMER_ARCHITECTURES = frozenset(
     {"transformer_nanoGPT", "transformer_miniLLaMA", "transformer_GPT2small"}

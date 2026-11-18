@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import gc
 import json
 import math
@@ -34,7 +35,7 @@ from finetuning.cls_models import (
     resolve_source,
 )
 from finetune_presets import FINETUNE_ALL
-from lit.cls_callbacks import ClsRunLogCallback, cls_early_stopping
+from lit.cls_callbacks import ClsRunLogCallback
 from lit.cls_module import LitClassifier
 from lit.callbacks import TimeBudgetCallback
 from lit.lm_module import default_lightning_precision
@@ -83,6 +84,21 @@ def _validate_preset(preset: dict[str, Any]) -> None:
         for key in ("embed_dim", "hidden_size", "num_layers", "dropout"):
             if key not in preset:
                 raise ValueError(f"scratch wymaga {key}")
+
+
+def _training_stats_from_disk(save_dir: Path, architecture: str) -> tuple[float, int]:
+    metrics_path = save_dir / "metrics.csv"
+    completed_epochs = 0
+    if metrics_path.is_file():
+        with metrics_path.open(encoding="utf-8", newline="") as f:
+            completed_epochs = sum(1 for _ in csv.DictReader(f))
+    best_f1 = 0.0
+    best_path = save_dir / f"{architecture}_best_eval.pt"
+    if best_path.is_file():
+        payload = torch.load(best_path, map_location="cpu", weights_only=False)
+        best_f1 = float(payload.get("best_f1_macro", 0.0))
+        del payload
+    return best_f1, completed_epochs
 
 
 def _estimate_total_steps(n_train: int, per_gpu_batch: int, devices: int, epochs: int) -> int:
@@ -329,7 +345,6 @@ def main(
     lr_scaling: str,
     precision: str,
     epochs: int,
-    early_stopping_patience: int,
     time_budget_min: float,
     warmup_ratio: float,
     max_grad_norm: float,
@@ -543,7 +558,6 @@ def main(
     callbacks = [
         TimeBudgetCallback(float(time_budget_min) * 60.0),
         run_cb,
-        cls_early_stopping(patience=early_stopping_patience),
     ]
     trainer = pl.Trainer(
         accelerator="gpu" if use_gpu else "cpu",
@@ -563,13 +577,9 @@ def main(
     t_run0 = time.perf_counter()
     trainer.fit(lit, train_dataloaders=train_loader, val_dataloaders=val_loader)
     train_segment = time.perf_counter() - t_run0
-    result = {
-        "best_f1_macro": run_cb.best_f1_macro,
-        "early_stopped": run_cb.early_stopped,
-        "completed_epochs": run_cb.completed_epochs,
-    }
     if not (save_dir / "metrics.csv").is_file():
         raise RuntimeError(f"Brak metrics.csv po fine-tune w {save_dir}")
+    best_f1_macro, completed_epochs = _training_stats_from_disk(save_dir, CLS_ARCHITECTURE)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = lit.model
@@ -622,8 +632,8 @@ def main(
             ],
             "training": [
                 f"train_total_seconds: {train_segment:.1f}",
-                f"best_f1_macro: {result.get('best_f1_macro')}",
-                f"early_stopped: {result.get('early_stopped')}",
+                f"completed_epochs: {completed_epochs}",
+                f"best_f1_macro: {best_f1_macro:.4f}",
             ],
             "test": [
                 f"accuracy: {test_metrics['accuracy']:.4f}",

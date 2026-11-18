@@ -11,7 +11,7 @@ _CLS_BASE: dict = dict(
         max_val_examples=0,     # 0 = pełna walidacja
         max_test_examples=0,    # 0 = pełny test; >0 skraca ewaluację i część inferencji
 
-        epochs=100,
+        epochs=50,
         time_budget_min=45.0,
 
 
@@ -29,7 +29,6 @@ _CLS_BASE: dict = dict(
     batch_size=32,
     lr_scaling="sqrt",
     precision="bf16-mixed",
-    early_stopping_patience=2,
     warmup_ratio=0.06,
     max_grad_norm=1.0,
     weight_decay=0.01,

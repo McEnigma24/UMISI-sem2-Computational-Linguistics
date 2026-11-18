@@ -83,6 +83,3 @@ class LitClassifier(pl.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {"scheduler": scheduler, "interval": "step", "frequency": 1},
         }
-
-    def set_total_steps(self, total_steps: int) -> None:
-        self.total_steps = total_steps
