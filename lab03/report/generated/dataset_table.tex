@@ -1,0 +1,33 @@
+\begin{table}[H]
+\centering
+\small
+\caption{Tweet Eval (sentiment): rozmiary splitów i rozkład klas w zbiorze treningowym.}
+\label{tab:cls-data}
+\begin{tabular}{@{}lr@{}}
+\toprule
+Cecha & Wartość \\
+\midrule
+Zbiór HF & \texttt{cardiffnlp/tweet\_eval} / \texttt{sentiment} \\
+Liczba klas & 3 \\
+Train / val / test & 45\,615 / 2\,000 / 12\,284 \\
+Train: negative & 7\,093 (15.5\%) \\
+Train: neutral & 20\,673 (45.3\%) \\
+Train: positive & 17\,849 (39.1\%) \\
+Maks. długość sekwencji & 128 tokenów \\
+\bottomrule
+\end{tabular}
+\end{table}
+\begin{table}[H]
+\centering
+\small
+\caption{Długość tweetów w tokenach (próbka 5\,000 przykładów treningowych).}
+\label{tab:cls-tokens}
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Tokenizer & Słownik & Średnio & p95 & Maks. & Ucięte \\
+\midrule
+BPE (nasze LM) & 32\,000 & 30.6 & 47 & 97 & 0.0\% \\
+GPT-2 & 50\,257 & 27.0 & 40 & 75 & 0.0\% \\
+\bottomrule
+\end{tabular}
+\end{table}

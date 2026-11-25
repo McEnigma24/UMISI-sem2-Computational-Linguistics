@@ -10,6 +10,7 @@ import torch
 from lightning.pytorch.callbacks import Callback
 
 from _utils_.log_print import log_print
+from _utils_.mem_info import log_memory
 from _utils_.timing import log_eta_from_first_batch, sync_device
 from lit.callbacks import _loss_from_batch_outputs
 
@@ -64,6 +65,7 @@ class ClsRunLogCallback(Callback):
     def on_fit_start(self, trainer: pl.Trainer, pl_module) -> None:
         if trainer.is_global_zero:
             self.metrics_save_dir.mkdir(parents=True, exist_ok=True)
+            log_memory("zaczynam fit", run_dir=self.metrics_save_dir)
 
     def on_train_epoch_start(self, trainer: pl.Trainer, pl_module) -> None:
         if not trainer.is_global_zero:
@@ -76,6 +78,7 @@ class ClsRunLogCallback(Callback):
         bs = getattr(loader, "batch_size", "?")
         ep = self._logical_epoch(trainer)
         log_print(f"Epoka {ep}/{self.max_epochs_cap}: {n:,} batchy (batch_size={bs})")
+        log_memory(f"start epoki {ep}/{self.max_epochs_cap}", run_dir=self.metrics_save_dir)
 
     def on_train_batch_end(
         self, trainer: pl.Trainer, pl_module, outputs, batch, batch_idx: int
@@ -176,16 +179,4 @@ class ClsRunLogCallback(Callback):
         )
         del state
         self.last_optimizer = opt
-
-    def on_train_end(self, trainer: pl.Trainer, pl_module) -> None:
-        if not trainer.is_global_zero:
-            return
-        state = _unwrap_classifier_state(pl_module)
-        payload = {
-            "epoch": self.completed_epochs,
-            "model_state_dict": state,
-            "best_f1_macro": self.best_f1_macro,
-        }
-        final_path = self.metrics_save_dir / f"{self.architecture}_final.pt"
-        torch.save(payload, final_path)
-        del payload, state
+        log_memory(f"koniec epoki {ep}/{self.max_epochs_cap}", run_dir=self.metrics_save_dir)

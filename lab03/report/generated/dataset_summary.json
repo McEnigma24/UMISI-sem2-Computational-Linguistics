@@ -1,0 +1,38 @@
+{
+  "hf_dataset": "cardiffnlp/tweet_eval",
+  "hf_config": "sentiment",
+  "num_labels": 3,
+  "label_names": [
+    "negative",
+    "neutral",
+    "positive"
+  ],
+  "max_train_examples": 0,
+  "max_val_examples": 0,
+  "max_test_examples": 0,
+  "train_portion": "pełny split HF (45,615 przykładów)",
+  "val_portion": "pełny split HF (2,000 przykładów)",
+  "test_portion": "pełny split HF (12,284 przykładów)",
+  "train_size": 45615,
+  "val_size": 2000,
+  "test_size": 12284,
+  "train_class_dist": {
+    "negative": 7093,
+    "neutral": 20673,
+    "positive": 17849
+  },
+  "val_class_dist": {
+    "negative": 312,
+    "neutral": 869,
+    "positive": 819
+  },
+  "max_len": 128,
+  "tokenizer_kind": "bpe",
+  "tokenizer": "text_and_tokenizer BPE",
+  "vocab_size": 32000,
+  "pad_token_id": 0,
+  "token_len_mean": 30.5762,
+  "token_len_p95": 47.0,
+  "token_len_max": 97.0,
+  "truncated_pct_train_sample": 0.0
+}

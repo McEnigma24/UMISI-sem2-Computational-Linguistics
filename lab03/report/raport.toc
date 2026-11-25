@@ -1,0 +1,17 @@
+\babel@toc {english}{}\relax 
+\contentsline {section}{\numberline {1}Cel}{2}{section.1}%
+\contentsline {section}{\numberline {2}Środowisko obliczeniowe}{2}{section.2}%
+\contentsline {section}{\numberline {3}Pretrening własnych modeli językowych}{2}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Korpus i tokenizacja}{2}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Architektura i rozmiary}{2}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Uwagi do porównań}{2}{subsection.3.3}%
+\contentsline {section}{\numberline {4}Zbiór danych klasyfikacji (Tweet Eval)}{3}{section.4}%
+\contentsline {section}{\numberline {5}Modele klasyfikacyjne}{3}{section.5}%
+\contentsline {section}{\numberline {6}Siatka eksperymentów (fine-tuning)}{3}{section.6}%
+\contentsline {section}{\numberline {7}Protokół ewaluacji}{4}{section.7}%
+\contentsline {section}{\numberline {8}Wyniki liczbowe}{4}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Wykresy zbiorcze}{4}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}Runy oczekujące}{5}{subsection.8.2}%
+\contentsline {section}{\numberline {9}Analiza porównawcza}{6}{section.9}%
+\contentsline {section}{\numberline {10}Wnioski}{7}{section.10}%
+\contentsline {section}{\numberline {A}Reprodukcja}{7}{appendix.A}%

@@ -1,0 +1,130 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[english]{babel}
+\usepackage{geometry}
+\geometry{margin=2.4cm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{amsmath}
+
+\newcommand{\repoRoot}{..}
+\setlength{\emergencystretch}{3em}
+
+\newcommand{\maybeinput}[1]{%
+  \IfFileExists{#1}{\input{#1}}{%
+    \begin{center}
+    \fcolorbox{orange}{yellow!10}{%
+      \parbox{0.9\linewidth}{\centering\textit{Plik \texttt{\detokenize{#1}} --- uzupełni się po wygenerowaniu (nocna kolejka).}}}%
+    \end{center}}}
+
+\newcommand{\maybefig}[2][]{%
+  \IfFileExists{#2}{\includegraphics[width=\linewidth,keepaspectratio]{#2}}{%
+    \begin{center}
+    \fcolorbox{orange}{yellow!10}{%
+      \parbox{0.85\linewidth}{\centering\textit{Wykres \texttt{\detokenize{#2}} --- pojawi się po zakończeniu eksperymentów. #1}}}%
+    \end{center}}}
+
+\title{Fine-tuning klasyfikacji sentymentu (Tweet Eval)\\%
+  Porównanie pretrenowanych miniLLaMA i GPT-2}
+\author{UMISI --- Computational Linguistics (lab03)}
+\date{\today}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Cel}
+Celem jest porównanie metod dostrajania modeli językowych decoder-only do klasyfikacji
+trójklasowej (negatywny / neutralny / pozytywny) na zbiorze \texttt{cardiffnlp/tweet\_eval}
+(sentiment). Bazą są własne modele \texttt{transformer\_miniLLaMA} (5--110\,M parametrów)
+wytrenowane na WikiText-103 oraz model referencyjny \texttt{openai-community/gpt2}.
+Dla każdego backbone'u badamy: pełny fine-tuning (\texttt{full}), LoRA, trening samej głowy
+(\texttt{head\_only}) oraz odmrożenie ostatnich $k$ bloków transformera ($k=\lceil pL\rceil$ dla
+$p\in\{10\%,20\%,30\%,50\%\}$). Trening klasyfikacji: 5 epok, global batch 64 (2$\times$GPU).
+
+\section{Środowisko obliczeniowe}
+\begin{itemize}
+  \item Sprzęt: 2$\times$ NVIDIA GeForce RTX 3060 (12\,GiB), AMD Ryzen 5 5600X, WSL2, RAM hosta ok.\,10\,GiB.
+  \item Oprogramowanie: Docker, \texttt{uv}, PyTorch + Lightning (\texttt{ddp\_spawn}), \texttt{transformers}, \texttt{peft}, \texttt{datasets}.
+  \item Precyzja treningu klasyfikacji: \texttt{bf16-mixed}.
+  \item Kod: \texttt{lab03/src/finetune.py}, presety \texttt{finetune\_presets.py}, kolejka \texttt{FINETUNE\_QUEUE}.
+\end{itemize}
+
+\section{Pretrening własnych modeli językowych}
+\subsection{Korpus i tokenizacja}
+\maybeinput{generated/pretrain_prose.tex}
+
+\subsection{Architektura i rozmiary}
+\maybeinput{generated/pretrain_table.tex}
+
+\subsection{Uwagi do porównań}
+Checkpointy użyte w fine-tunie są przypięte jawnie w \texttt{PRETRAINED\_LM} (pełny WikiText-103).
+Wcześniejsze eksperymenty z \texttt{pt-latest} mogły wybierać starsze, krótsze runy smoke --- ta seria tego unika.
+
+\section{Zbiór danych klasyfikacji (Tweet Eval)}
+Klasyfikacja pełnotekstowa (nie token-level). Etykiety: \texttt{negative}, \texttt{neutral}, \texttt{positive}.
+Dla modeli BPE stosowany jest tokenizer pretreningu; dla GPT-2 --- tokenizer Hugging Face.
+
+\maybeinput{generated/dataset_table.tex}
+
+\section{Modele klasyfikacyjne}
+\textbf{miniLLaMA + głowa:} backbone z checkpointu LM (lub scratch), pooling ostatniego tokena,
+MLP (\texttt{head\_hidden}=256, dropout 0.1). \textbf{GPT-2:} \texttt{GPT2ForSequenceClassification}.
+Metryki walidacyjne: makro F1; wybór \texttt{best\_eval} po \texttt{val/f1\_macro}.
+
+\section{Siatka eksperymentów (fine-tuning)}
+\maybeinput{generated/grid_prose.tex}
+
+\maybeinput{generated/grid_table.tex}
+
+\section{Protokół ewaluacji}
+\begin{itemize}
+  \item Po treningu: test na wagach \texttt{*\_best\_eval.pt} (lub \texttt{final} jako fallback).
+  \item Metryki: accuracy, F1 (macro/weighted), confusion matrix, czas treningu i inferencji (ms/przykład, 1000-próbkowy benchmark).
+  \item Perplexity klasyfikacji: $\exp(\mathrm{CE}_\mathrm{test})$ (zakres teoretyczny $[1,3]$ przy 3 klasach).
+  \item Perplexity LM: średnia NLL następnego tokenu na tekstach testowych (przed i po fine-tunie) + bity/znak dla porównań między tokenizerami.
+  \item Checkpointy epok: \texttt{checkpoints/epoch\_XXXX.pt} (same wagi).
+\end{itemize}
+
+\section{Wyniki liczbowe}
+\maybeinput{generated/results_table.tex}
+
+\subsection{Wykresy zbiorcze}
+\maybefig[]{generated/figures/accuracy_ranking.pdf}
+\maybefig[]{generated/figures/f1_ranking.pdf}
+\maybefig[]{generated/figures/val_f1_curves.pdf}
+
+\subsection{Runy oczekujące}
+\maybeinput{generated/missing_runs.tex}
+
+\section{Analiza porównawcza}
+\begin{center}
+\fcolorbox{blue}{blue!5}{%
+\parbox{0.92\linewidth}{%
+\textit{Sekcja do uzupełnienia po zakończeniu nocnej kolejki: wpływ rozmiaru modelu, metody dostrajania, trade-off dokładność/czas/inferencja, ablacja rozmiaru danych treningowych.}}}
+\end{center}
+
+\section{Wnioski}
+\begin{center}
+\fcolorbox{blue}{blue!5}{%
+\parbox{0.92\linewidth}{%
+\textit{Wnioski końcowe --- po zebraniu wyników.}}}
+\end{center}
+
+\appendix
+\section{Reprodukcja}
+\begin{verbatim}
+cd lab03
+./shell.sh ./start.sh          # pełna kolejka fine-tune + generator raportu
+./report/build.sh              # pdflatex po stronie hosta
+./shell.sh uv run python src/finetune.py --list-sources
+\end{verbatim}
+
+\end{document}

@@ -23,6 +23,7 @@ from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
 from _utils_.log_print import log_print, tensorboard_run_dir
+from _utils_.mem_info import log_memory
 from _utils_.run_paths import PRETRAIN_PHASE, arch_root, models_root, resolve_save_dir, run_tag_from_dir_name
 from _utils_.timing import sync_device
 from finetuning.cls_data import LABEL_NAMES, NUM_LABELS, collate_from_spec, prepare_cls_data
@@ -34,7 +35,9 @@ from finetuning.cls_models import (
     count_parameters,
     resolve_source,
 )
-from finetune_presets import FINETUNE_ALL
+from finetune_presets import FINETUNE_ALL, FINETUNE_QUEUE
+from finetuning.lm_eval import language_model_perplexity_on_dataset
+from metrics.run_metrics import TEST_METRICS_FILENAME
 from lit.cls_callbacks import ClsRunLogCallback
 from lit.cls_module import LitClassifier
 from lit.callbacks import TimeBudgetCallback
@@ -50,6 +53,23 @@ def _release_gpu_memory() -> None:
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+
+
+def _resolve_eval_weights_path(save_dir: Path, architecture: str) -> Path:
+    best_path = save_dir / f"{architecture}_best_eval.pt"
+    if best_path.is_file():
+        return best_path
+    legacy_final = save_dir / f"{architecture}_final.pt"
+    if legacy_final.is_file():
+        return legacy_final
+    ckpt_dir = save_dir / "checkpoints"
+    if ckpt_dir.is_dir():
+        epoch_files = sorted(ckpt_dir.glob("epoch_*.pt"))
+        if epoch_files:
+            return epoch_files[-1]
+    raise FileNotFoundError(
+        f"Brak wag do testu w {save_dir} ({architecture}_best_eval.pt lub checkpoints/epoch_*.pt)"
+    )
 
 
 def _tokenizer_kind(resolved: dict[str, Any]) -> str:
@@ -78,12 +98,99 @@ def _validate_preset(preset: dict[str, Any]) -> None:
                 raise ValueError(f"finetune_mode=lora wymaga {key}")
     if mode == "unfreeze_last" and preset.get("unfreeze_last_n") is None:
         raise ValueError("unfreeze_last wymaga unfreeze_last_n")
+    if mode == "head_only" and source == "scratch":
+        raise ValueError("head_only nie ma sensu dla scratch — użyj full")
     if source == "scratch" and mode != "full":
         raise ValueError("scratch wspiera wyłącznie finetune_mode=full")
     if source == "scratch":
         for key in ("embed_dim", "hidden_size", "num_layers", "dropout"):
             if key not in preset:
                 raise ValueError(f"scratch wymaga {key}")
+
+
+def _best_val_f1_from_metrics(save_dir: Path) -> tuple[int, float]:
+    metrics_path = save_dir / METRICS_FILENAME
+    if not metrics_path.is_file():
+        return 0, 0.0
+    rows = list(csv.DictReader(metrics_path.open(encoding="utf-8")))
+    if not rows:
+        return 0, 0.0
+    best = max(rows, key=lambda r: float(r["eval_f1_macro"]))
+    return int(float(best["epoch"])), float(best["eval_f1_macro"])
+
+
+def _source_from_hparams(hp_source: Any) -> str | None:
+    if isinstance(hp_source, str):
+        return hp_source.strip()
+    if isinstance(hp_source, dict):
+        kind = hp_source.get("kind")
+        if kind == "scratch":
+            return "scratch"
+        if kind == "hf":
+            mid = hp_source.get("model_id")
+            return f"hf:{mid}" if mid else None
+        if kind == "pt":
+            path = hp_source.get("path")
+            return f"pt:{path}" if path else None
+    return None
+
+
+def _source_preset_match(hp_source: Any, preset_source: str) -> bool:
+    meta_src = _source_from_hparams(hp_source)
+    preset_src = str(preset_source).strip()
+    if meta_src is None:
+        return False
+    if meta_src == preset_src:
+        return True
+    if meta_src.startswith("pt:") and preset_src.startswith("pt:"):
+        try:
+            return Path(meta_src[3:]).resolve() == Path(preset_src[3:]).resolve()
+        except OSError:
+            return meta_src == preset_src
+    return False
+
+
+def _preset_matches_run_meta(meta: dict[str, Any], preset: dict[str, Any]) -> bool:
+    if int(meta.get("epochs", -1)) != int(preset["epochs"]):
+        return False
+    hp = meta.get("hparams") or {}
+    for key in ("max_train_examples", "max_val_examples", "max_test_examples"):
+        if int(hp.get(key, -1)) != int(preset[key]):
+            return False
+    if hp.get("finetune_mode") != preset["finetune_mode"]:
+        return False
+    if not _source_preset_match(hp.get("source"), preset["source"]):
+        return False
+    if preset.get("unfreeze_last_n") is not None:
+        if int(hp.get("unfreeze_last_n", -1)) != int(preset["unfreeze_last_n"]):
+            return False
+    return True
+
+
+def completed_run_dir(preset: dict[str, Any]) -> Path | None:
+    """Najnowszy ukończony run (test_metrics.json + zgodność z presetem)."""
+    root = arch_root(CLS_ARCHITECTURE)
+    if not root.is_dir():
+        return None
+    tag = preset["run_tag"]
+    matches: list[Path] = []
+    for child in root.iterdir():
+        if not child.is_dir() or child.name.startswith("_"):
+            continue
+        if run_tag_from_dir_name(child.name) != tag:
+            continue
+        if not (child / TEST_METRICS_FILENAME).is_file():
+            continue
+        meta_path = child / META_FILENAME
+        if not meta_path.is_file():
+            continue
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        if _preset_matches_run_meta(meta, preset):
+            matches.append(child)
+    if not matches:
+        return None
+    matches.sort(key=lambda p: p.name)
+    return matches[0]
 
 
 def _training_stats_from_disk(save_dir: Path, architecture: str) -> tuple[float, int]:
@@ -256,79 +363,6 @@ def list_sources() -> None:
             log_print(f"  {src}  preset_tag={preset.get('run_tag')}")
 
 
-def compare_runs(run_dirs: list[Path] | None = None, *, run_tags: list[str] | None = None) -> Path:
-    cls_runs_root = arch_root(CLS_ARCHITECTURE)
-    candidates: list[Path] = []
-    if run_dirs:
-        candidates = [Path(p) for p in run_dirs]
-    elif run_tags:
-        for child in cls_runs_root.iterdir() if cls_runs_root.is_dir() else []:
-            if run_tag_from_dir_name(child.name) in run_tags:
-                candidates.append(child)
-    else:
-        if cls_runs_root.is_dir():
-            for child in cls_runs_root.iterdir():
-                if (child / METRICS_FILENAME).is_file():
-                    candidates.append(child)
-    if not candidates:
-        raise FileNotFoundError("Brak runów do porównania")
-
-    rows = []
-    for save_dir in candidates:
-        meta = {}
-        if (save_dir / META_FILENAME).is_file():
-            meta = json.loads((save_dir / META_FILENAME).read_text(encoding="utf-8"))
-        test_m = meta.get("test_metrics") or {}
-        model_m = meta.get("model") or {}
-        rows.append(
-            {
-                "run_id": save_dir.name,
-                "run_tag": run_tag_from_dir_name(save_dir.name),
-                "source": meta.get("hparams", {}).get("source"),
-                "finetune_mode": meta.get("hparams", {}).get("finetune_mode"),
-                "params_total": model_m.get("params"),
-                "params_trainable": model_m.get("trainable"),
-                "test_accuracy": test_m.get("accuracy"),
-                "test_f1_macro": test_m.get("f1_macro"),
-                "test_f1_weighted": test_m.get("f1_weighted"),
-                "train_total_seconds": meta.get("train_total_seconds"),
-                "inference_ms_per_example": test_m.get("inference_ms_per_example"),
-            }
-        )
-    df = pd.DataFrame(rows)
-    out_dir = Path(__file__).resolve().parents[1] / "model_evaluations" / f"cls_compare_{datetime.now():%Y%m%d-%H%M%S}"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = out_dir / "cls_compare.csv"
-    df.to_csv(csv_path, index=False)
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-    for run_id, grp in df.groupby("run_id"):
-        save_dir = next(p for p in candidates if p.name == run_id)
-        hist = pd.read_csv(save_dir / METRICS_FILENAME)
-        ax.plot(
-            pd.to_numeric(hist["epoch"], errors="coerce"),
-            pd.to_numeric(hist["eval_f1_macro"], errors="coerce"),
-            marker="o",
-            label=run_id,
-        )
-    ax.set_title("val F1 macro — porównanie runów")
-    ax.legend(fontsize=7)
-    ax.set_xlabel("epoch")
-    fig.savefig(out_dir / "cls_val_curves.png", dpi=120)
-    plt.close(fig)
-
-    fig2, ax2 = plt.subplots(figsize=(8, 4))
-    x = range(len(df))
-    ax2.bar(x, pd.to_numeric(df["test_f1_macro"], errors="coerce"))
-    ax2.set_xticks(list(x))
-    ax2.set_xticklabels(df["run_tag"], rotation=30, ha="right")
-    ax2.set_title("test F1 macro")
-    fig2.savefig(out_dir / "cls_test_bars.png", dpi=120)
-    plt.close(fig2)
-    log_print(f"compare_runs → {out_dir}")
-    return out_dir
-
-
 def main(
     tensorboard_dir: str | None = None,
     *,
@@ -368,6 +402,8 @@ def main(
     dropout: float | None = None,
     val_checks_per_epoch: int = 1,
     log_every_n_steps: int = 50,
+    unfreeze_fractions: list[float] | None = None,
+    backbone_num_layers: int | None = None,
 ) -> None:
     _ = (dataset, val_checks_per_epoch, log_every_n_steps)
     preset = {
@@ -450,18 +486,28 @@ def main(
     )
 
     save_dir = resolve_save_dir(CLS_ARCHITECTURE, run_tag=run_tag)
+    log_memory(f"start runu {run_tag}", run_dir=save_dir)
+    log_memory("model załadowany", run_dir=save_dir)
 
     hparams = {
         "task": "classification",
         "architecture": CLS_ARCHITECTURE,
-        "source": source,
+        "run_tag": run_tag,
         "finetune_mode": finetune_mode,
         "pooling": pooling,
         "head_hidden": head_hidden,
         "head_dropout": head_dropout,
         "max_len": max_len,
+        "max_train_examples": max_train_examples,
+        "max_val_examples": max_val_examples,
+        "max_test_examples": max_test_examples,
+        "unfreeze_last_n": unfreeze_last_n,
+        "unfreeze_fractions": unfreeze_fractions,
+        "backbone_num_layers": backbone_num_layers,
         **mode_info,
         **model_meta,
+        "source": source,
+        "source_resolved": model_meta.get("source"),
     }
     metrics_logger = RunMetricsLogger(save_dir)
     metrics_logger.write_meta(
@@ -507,19 +553,40 @@ def main(
 
     total_steps = _estimate_total_steps(len(train_ds), per_gpu, devices, epochs)
     warmup_steps = max(1, int(total_steps * warmup_ratio))
+    collate = collate_from_spec(tok_spec)
 
     from datetime import timedelta
 
     import lightning.pytorch as pl
     from lightning.pytorch.loggers import TensorBoardLogger
 
+    eval_device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    lm_src = resolved["kind"]
+    log_print("LM perplexity (baza, przed treningiem) na teście…")
+    log_memory("przed lm eval (baza)", run_dir=save_dir)
+    lm_before = language_model_perplexity_on_dataset(
+        model,
+        test_ds,
+        collate,
+        eval_device,
+        batch_size=min(16, per_gpu),
+        source_kind=lm_src,
+    )
     model.cpu()
     _release_gpu_memory()
+    log_memory("po lm eval (baza)", run_dir=save_dir)
     os.environ.setdefault("NCCL_P2P_DISABLE", "1")
     use_gpu = torch.cuda.is_available()
-    strat = "ddp_spawn" if devices > 1 and use_gpu else "auto"
+    if devices > 1 and use_gpu:
+        from lightning.pytorch.strategies import DDPStrategy
+
+        find_unused = finetune_mode in ("lora", "head_only", "unfreeze_last")
+        strat = DDPStrategy(start_method="spawn", find_unused_parameters=find_unused)
+    else:
+        strat = "auto"
     prec = precision or default_lightning_precision("transformer_miniLLaMA")
     log_print(f"Lightning fit: devices={devices}, strategy={strat}, batch/GPU={per_gpu}")
+    log_memory("przed fit (Lightning)", run_dir=save_dir)
 
     lit = LitClassifier(
         model,
@@ -529,7 +596,6 @@ def main(
         total_steps=total_steps,
         weight_decay=weight_decay,
     )
-    collate = collate_from_spec(tok_spec)
     pin = use_gpu
     train_loader = DataLoader(
         train_ds,
@@ -580,15 +646,16 @@ def main(
     if not (save_dir / "metrics.csv").is_file():
         raise RuntimeError(f"Brak metrics.csv po fine-tune w {save_dir}")
     best_f1_macro, completed_epochs = _training_stats_from_disk(save_dir, CLS_ARCHITECTURE)
+    best_val_epoch, _ = _best_val_f1_from_metrics(save_dir)
+
+    model = lit.model
+    del train_loader, val_loader, trainer, lit
+    _release_gpu_memory()
+    log_memory("koniec fit (przed testem)", run_dir=save_dir)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = lit.model
     model.to(device)
-    best_path = save_dir / f"{CLS_ARCHITECTURE}_best_eval.pt"
-    final_path = save_dir / f"{CLS_ARCHITECTURE}_final.pt"
-    weights_path = best_path if best_path.is_file() else final_path
-    if not weights_path.is_file():
-        raise FileNotFoundError(f"Brak {best_path.name} i {final_path.name} w {save_dir}")
+    weights_path = _resolve_eval_weights_path(save_dir, CLS_ARCHITECTURE)
     payload = torch.load(weights_path, map_location="cpu", weights_only=False, mmap=True)
     model.load_state_dict(payload["model_state_dict"], strict=True)
     del payload
@@ -603,9 +670,27 @@ def main(
         bench_n=inference_bench_examples,
     )
     test_metrics.update(timing)
+    test_metrics["cls_perplexity"] = float(math.exp(min(test_metrics["loss"], 20.0)))
+    test_metrics["best_val_f1_macro"] = best_f1_macro
+    test_metrics["best_val_f1_epoch"] = best_val_epoch
+    for k, v in lm_before.items():
+        test_metrics[f"lm_before_{k}"] = v
+    log_print("LM perplexity (po fine-tune, best_eval) na teście…")
+    log_memory("przed lm eval (po ft)", run_dir=save_dir)
+    lm_after = language_model_perplexity_on_dataset(
+        model,
+        test_ds,
+        collate,
+        device,
+        batch_size=min(16, per_gpu),
+        source_kind=lm_src,
+    )
+    for k, v in lm_after.items():
+        test_metrics[f"lm_after_{k}"] = v
     model.cpu()
     del test_loader
     _release_gpu_memory()
+    log_memory("koniec runu (po teście)", run_dir=save_dir)
     metrics_logger.write_test_metrics(test_metrics)
     metrics_logger.write_timing(
         train_total_seconds=train_segment,
@@ -653,13 +738,9 @@ def main(
 def _cli() -> None:
     parser = argparse.ArgumentParser(description="Fine-tuning klasyfikacji Tweet Eval")
     parser.add_argument("--list-sources", action="store_true", help="Wypisz dostępne źródła modelu")
-    parser.add_argument("--compare", action="store_true", help="Porównaj runy cls")
     args = parser.parse_args()
     if args.list_sources:
         list_sources()
-        return
-    if args.compare:
-        compare_runs()
         return
     parser.print_help()
 

@@ -242,7 +242,8 @@ def find_lm_best_eval_by_run_tag(run_tag: str) -> Path:
             candidates.append((child.name, p))
     if not candidates:
         raise FileNotFoundError(f"Brak best_eval dla run_tag={run_tag!r} w {lm_runs_root}")
-    candidates.sort(key=lambda x: x[0], reverse=True)
+    # Mniejszy odwrócony unix w nazwie = nowszy run (patrz inverted_unix_prefix).
+    candidates.sort(key=lambda x: x[0])
     return candidates[0][1]
 
 
@@ -300,6 +301,30 @@ def apply_finetune_mode(
             p.requires_grad = True
         return model, info
 
+    if finetune_mode == "head_only":
+        for p in model.parameters():
+            p.requires_grad = False
+        if isinstance(model, MiniLlamSequenceClassifier):
+            for p in model.head.parameters():
+                p.requires_grad = True
+        elif isinstance(model, HfSequenceClassifier):
+            core = model.core
+            if hasattr(core, "score"):
+                for p in core.score.parameters():
+                    p.requires_grad = True
+            elif hasattr(core, "classifier"):
+                for p in core.classifier.parameters():
+                    p.requires_grad = True
+            else:
+                raise ValueError("HF model bez warstwy klasyfikacji (score/classifier)")
+        else:
+            if hasattr(model, "head"):
+                for p in model.head.parameters():
+                    p.requires_grad = True
+            else:
+                raise ValueError("head_only: nieznana architektura")
+        return model, info
+
     if finetune_mode == "unfreeze_last":
         if unfreeze_last_n is None or unfreeze_last_n < 1:
             raise ValueError("unfreeze_last wymaga unfreeze_last_n >= 1")
@@ -336,6 +361,9 @@ def apply_finetune_mode(
             if hasattr(core, "score"):
                 for p in core.score.parameters():
                     p.requires_grad = True
+            if hasattr(core, "transformer") and hasattr(core.transformer, "ln_f"):
+                for p in core.transformer.ln_f.parameters():
+                    p.requires_grad = True
         if isinstance(model, MiniLlamSequenceClassifier):
             for p in model.head.parameters():
                 p.requires_grad = True
@@ -360,7 +388,6 @@ def apply_finetune_mode(
                 lora_dropout=lora_dropout,
                 target_modules=target,
                 modules_to_save=modules_to_save,
-                task_type=TaskType.SEQ_CLS,
             )
             wrapped = get_peft_model(model, peft_config)
             info["peft"] = True
@@ -370,6 +397,7 @@ def apply_finetune_mode(
                 r=lora_r,
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,
+                target_modules=["c_attn", "c_proj", "c_fc"],
                 task_type=TaskType.SEQ_CLS,
             )
             wrapped = get_peft_model(model.core, peft_config)
