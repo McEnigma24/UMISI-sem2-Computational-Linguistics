@@ -3,31 +3,13 @@
 from __future__ import annotations
 
 import math
-from typing import Any
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from finetuning.cls_data import TweetSentimentDataset, collate_from_spec
-
-
-@torch.no_grad()
-def _shifted_ce(logits: torch.Tensor, labels: torch.Tensor, mask: torch.Tensor) -> tuple[float, int, int]:
-    """logits [B,T,V], labels [B,T] next-token targets, mask [B,T] na label positions."""
-    b, t, v = logits.shape
-    flat_logits = logits.reshape(-1, v)
-    flat_labels = labels.reshape(-1)
-    flat_mask = mask.reshape(-1).bool()
-    if not flat_mask.any():
-        return float("nan"), 0, 0
-    sel_logits = flat_logits[flat_mask]
-    sel_labels = flat_labels[flat_mask]
-    loss = F.cross_entropy(sel_logits, sel_labels, reduction="sum")
-    n_tok = int(sel_labels.numel())
-    n_char = 0
-    return float(loss.item()), n_tok, n_char
+from finetuning.cls_data import TweetSentimentDataset
 
 
 def _minillama_lm_logits(model: nn.Module, input_ids: torch.Tensor) -> torch.Tensor:
@@ -38,13 +20,7 @@ def _minillama_lm_logits(model: nn.Module, input_ids: torch.Tensor) -> torch.Ten
     if hasattr(core, "model"):
         core = core.model
     backbone = core.backbone if hasattr(core, "backbone") else core
-    b, t = input_ids.shape
-    pos = torch.arange(0, t, device=input_ids.device)
-    h = backbone.drop(backbone.tok_emb(input_ids))
-    for block in backbone.blocks:
-        h, _ = block(h, None, pos)
-    h = backbone.norm_f(h)
-    return backbone.lm_head(h)
+    return backbone.lm_head(backbone.forward_hidden(input_ids))
 
 
 def _resolve_gpt2_core(model: nn.Module) -> nn.Module:
@@ -119,26 +95,22 @@ def language_model_perplexity_on_dataset(
             logits = _gpt2_lm_logits(model, input_ids)
         else:
             raise ValueError(source_kind)
-        labels = input_ids.clone()
+        labels = torch.full_like(input_ids, -100)
         labels[:, :-1] = input_ids[:, 1:]
-        labels[:, -1] = -100
-        mask = torch.ones_like(labels, dtype=torch.bool)
-        mask[:, -1] = False
         if attn is not None:
-            mask &= attn.bool()
-            shift_attn = attn.clone()
-            shift_attn[:, -1] = 0
-            mask &= shift_attn.bool()
+            # Cel na pozycji i to token i+1 — liczymy tylko, gdy i+1 jest prawdziwym tokenem (nie padding).
+            target_valid = torch.zeros_like(attn, dtype=torch.bool)
+            target_valid[:, :-1] = attn[:, 1:].bool()
+            labels[~target_valid] = -100
+        n_tok = int((labels != -100).sum().item())
+        if n_tok < 1:
+            continue
         nll = F.cross_entropy(
-            logits.reshape(-1, logits.size(-1)),
+            logits.float().reshape(-1, logits.size(-1)),
             labels.reshape(-1),
             ignore_index=-100,
             reduction="sum",
         )
-        valid = (labels != -100) & mask
-        n_tok = int(valid.sum().item())
-        if n_tok < 1:
-            continue
         total_nll += float(nll.item())
         total_tokens += n_tok
         batch_indices = list(range(idx_base, min(idx_base + b, len(dataset))))
@@ -154,7 +126,7 @@ def language_model_perplexity_on_dataset(
             "lm_n_chars": 0,
         }
     mean_nll = total_nll / total_tokens
-    ppl = math.exp(min(mean_nll, 20.0))
+    ppl = math.exp(min(mean_nll, 700.0))
     bits_per_char = (total_nll / math.log(2)) / max(1, total_chars)
     return {
         "lm_loss_mean": mean_nll,

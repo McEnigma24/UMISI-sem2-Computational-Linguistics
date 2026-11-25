@@ -5,35 +5,101 @@
 \providecommand\HyField@AuxAddToFields[1]{}
 \providecommand\HyField@AuxAddToCoFields[2]{}
 \babel@aux{english}{}
-\@writefile{toc}{\contentsline {section}{\numberline {1}Cel}{2}{section.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {2}Środowisko obliczeniowe}{2}{section.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {3}Pretrening własnych modeli językowych}{2}{section.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Korpus i tokenizacja}{2}{subsection.3.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Architektura i rozmiary}{2}{subsection.3.2}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Pretrenowane modele miniLLaMA (WikiText-103).}}{2}{table.1}\protected@file@percent }
-\newlabel{tab:pretrain}{{1}{2}{Pretrenowane modele miniLLaMA (WikiText-103)}{table.1}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Uwagi do porównań}{2}{subsection.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {1}Cel}{3}{section.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Środowisko obliczeniowe}{3}{section.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}Pretrening własnych modeli językowych}{3}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Korpus i tokenizacja}{3}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Architektura i rozmiary}{3}{subsection.3.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Pretrenowane modele miniLLaMA (WikiText-103). Modele 50M i 110M zatrzymał limit czasu 90\,min (ok.\ 2{,}25 i 1{,}3 epoki zamiast 3).}}{3}{table.1}\protected@file@percent }
+\newlabel{tab:pretrain}{{1}{3}{Pretrenowane modele miniLLaMA (WikiText-103). Modele 50M i 110M zatrzymał limit czasu 90\,min (ok.\ 2{,}25 i 1{,}3 epoki zamiast 3)}{table.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Uwagi do porównań}{3}{subsection.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Zbiór danych klasyfikacji (Tweet Eval)}{4}{section.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Tweet Eval (\texttt  {cardiffnlp/tweet\_eval}, konfiguracja \texttt  {sentiment}): oficjalne splity i rozkład klas. Rozkład testu wyraźnie różni się od treningu.}}{4}{table.2}\protected@file@percent }
+\newlabel{tab:cls-data}{{2}{4}{Tweet Eval (\texttt {cardiffnlp/tweet\_eval}, konfiguracja \texttt {sentiment}): oficjalne splity i rozkład klas. Rozkład testu wyraźnie różni się od treningu}{table.2}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Długość tweetów w tokenach (próbka 5\,000 przykładów treningowych).}}{4}{table.3}\protected@file@percent }
+\newlabel{tab:cls-tokens}{{3}{4}{Długość tweetów w tokenach (próbka 5\,000 przykładów treningowych)}{table.3}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Przykładowe tweety z zbioru treningowego (pierwsze dwa z każdej klasy; znaki spoza ASCII zastąpione ?).}}{4}{table.4}\protected@file@percent }
+\newlabel{tab:cls-examples}{{4}{4}{Przykładowe tweety z zbioru treningowego (pierwsze dwa z każdej klasy; znaki spoza ASCII zastąpione ?)}{table.4}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Modele klasyfikacyjne}{4}{section.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Siatka eksperymentów (fine-tuning)}{4}{section.6}\protected@file@percent }
 \gdef \LT@i {\LT@entry 
-    {4}{157.24957pt}\LT@entry 
-    {4}{58.41722pt}\LT@entry 
-    {4}{69.2226pt}\LT@entry 
-    {4}{102.7776pt}\LT@entry 
-    {4}{36.66704pt}\LT@entry 
-    {4}{27.77785pt}}
-\@writefile{toc}{\contentsline {section}{\numberline {4}Zbiór danych klasyfikacji (Tweet Eval)}{3}{section.4}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Tweet Eval (sentiment): rozmiary splitów i rozkład klas w zbiorze treningowym.}}{3}{table.2}\protected@file@percent }
-\newlabel{tab:cls-data}{{2}{3}{Tweet Eval (sentiment): rozmiary splitów i rozkład klas w zbiorze treningowym}{table.2}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Długość tweetów w tokenach (próbka 5\,000 przykładów treningowych).}}{3}{table.3}\protected@file@percent }
-\newlabel{tab:cls-tokens}{{3}{3}{Długość tweetów w tokenach (próbka 5\,000 przykładów treningowych)}{table.3}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {5}Modele klasyfikacyjne}{3}{section.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {6}Siatka eksperymentów (fine-tuning)}{3}{section.6}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {4}{Kolejka fine-tune: backbone, metoda, odmrożone bloki i LR.}}{3}{table.4}\protected@file@percent }
-\newlabel{tab:grid}{{4}{3}{Kolejka fine-tune: backbone, metoda, odmrożone bloki i LR}{table.4}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {7}Protokół ewaluacji}{4}{section.7}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {8}Wyniki liczbowe}{4}{section.8}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}Wykresy zbiorcze}{4}{subsection.8.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.2}Runy oczekujące}{5}{subsection.8.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {9}Analiza porównawcza}{6}{section.9}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {10}Wnioski}{7}{section.10}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {A}Reprodukcja}{7}{appendix.A}\protected@file@percent }
-\gdef \@abspage@last{7}
+    {4}{157.24956pt}\LT@entry 
+    {4}{58.4172pt}\LT@entry 
+    {4}{69.22258pt}\LT@entry 
+    {4}{102.77759pt}\LT@entry 
+    {4}{36.66702pt}\LT@entry 
+    {4}{27.77783pt}}
+\@writefile{lot}{\contentsline {table}{\numberline {5}{Kolejka fine-tune: backbone, metoda, odmrożone bloki i LR.}}{5}{table.5}\protected@file@percent }
+\newlabel{tab:grid}{{5}{5}{Kolejka fine-tune: backbone, metoda, odmrożone bloki i LR}{table.5}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {7}Protokół ewaluacji}{5}{section.7}\protected@file@percent }
+\gdef \LT@ii {\LT@entry 
+    {4}{12.75pt}\LT@entry 
+    {4}{51.77896pt}\LT@entry 
+    {4}{53.84053pt}\LT@entry 
+    {1}{36.18301pt}\LT@entry 
+    {1}{50.45122pt}\LT@entry 
+    {1}{37.8313pt}\LT@entry 
+    {1}{45.43274pt}\LT@entry 
+    {1}{49.78381pt}\LT@entry 
+    {1}{38.78192pt}\LT@entry 
+    {1}{49.70392pt}\LT@entry 
+    {1}{34.64864pt}}
+\@writefile{toc}{\contentsline {section}{\numberline {8}Wyniki liczbowe}{6}{section.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}Ranking wszystkich wariantów}{6}{subsection.8.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6}{Wyniki klasyfikacji na teście (12\,284 tweety), posortowane malejąco po accuracy (GPT-2 wyróżniony). Param.\ = liczba parametrów modelu [M]; Trenowane = odsetek parametrów aktualizowanych przez optymalizator; F1 w \%.}}{6}{table.6}\protected@file@percent }
+\newlabel{tab:results}{{6}{6}{Wyniki klasyfikacji na teście (12\,284 tweety), posortowane malejąco po accuracy (GPT-2 wyróżniony). Param.\ = liczba parametrów modelu [M]; Trenowane = odsetek parametrów aktualizowanych przez optymalizator; F1 w \%}{table.6}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Accuracy na teście dla całej siatki (pełny zbiór treningowy); kolor = backbone.}}{7}{figure.1}\protected@file@percent }
+\newlabel{fig:acc-ranking}{{1}{7}{Accuracy na teście dla całej siatki (pełny zbiór treningowy); kolor = backbone}{figure.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces F1 macro na teście dla całej siatki.}}{8}{figure.2}\protected@file@percent }
+\newlabel{fig:f1-ranking}{{2}{8}{F1 macro na teście dla całej siatki}{figure.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.2}Metoda dostrajania a backbone}{9}{subsection.8.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Accuracy [\%] w układzie backbone $\times $ metoda. Kolumny ,,top $p$'' to odmrożenie $k=\lceil pL\rceil $ ostatnich bloków; dla płytkich modeli kilka udziałów daje to samo $k$, wtedy ten sam run wypełnia kilka kolumn.}}{9}{figure.3}\protected@file@percent }
+\newlabel{fig:heatmap}{{3}{9}{Accuracy [\%] w układzie backbone $\times $ metoda. Kolumny ,,top $p$'' to odmrożenie $k=\lceil pL\rceil $ ostatnich bloków; dla płytkich modeli kilka udziałów daje to samo $k$, wtedy ten sam run wypełnia kilka kolumn}{figure.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.3}Rozmiar modelu}{9}{subsection.8.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Accuracy w funkcji rozmiaru backbone'u (parametry modelu bazowego, bez adapterów). Dla ,,ostatnich bloków'' pokazany najlepszy wariant $k$.}}{9}{figure.4}\protected@file@percent }
+\newlabel{fig:size}{{4}{9}{Accuracy w funkcji rozmiaru backbone'u (parametry modelu bazowego, bez adapterów). Dla ,,ostatnich bloków'' pokazany najlepszy wariant $k$}{figure.4}{}}
+\gdef \LT@iii {\LT@entry 
+    {1}{46.36098pt}\LT@entry 
+    {4}{58.63823pt}\LT@entry 
+    {1}{73.86131pt}\LT@entry 
+    {1}{60.77792pt}\LT@entry 
+    {1}{51.08328pt}\LT@entry 
+    {1}{37.9999pt}\LT@entry 
+    {1}{47.55588pt}\LT@entry 
+    {1}{51.88887pt}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.4}Koszt treningu}{10}{subsection.8.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Accuracy vs liczba trenowanych parametrów (lewo) i vs czas treningu 5 epok na 2$\times $RTX 3060 (prawo).}}{10}{figure.5}\protected@file@percent }
+\newlabel{fig:tradeoff}{{5}{10}{Accuracy vs liczba trenowanych parametrów (lewo) i vs czas treningu 5 epok na 2$\times $RTX 3060 (prawo)}{figure.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.5}Perplexity}{10}{subsection.8.5}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {7}{Perplexity modelu językowego na tekstach testowych (przed i po fine-tunie, ten sam backbone z wagami \texttt  {best\_eval}) oraz szybkość inferencji klasyfikatora. Przepustowość: cały test batchami po 32; opóźnienie: 1\,000 pojedynczych przykładów.}}{10}{table.7}\protected@file@percent }
+\newlabel{tab:lm}{{7}{10}{Perplexity modelu językowego na tekstach testowych (przed i po fine-tunie, ten sam backbone z wagami \texttt {best\_eval}) oraz szybkość inferencji klasyfikatora. Przepustowość: cały test batchami po 32; opóźnienie: 1\,000 pojedynczych przykładów}{table.7}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Lewo: perplexity klasyfikacji $\exp (\mathrm  {CE})$ (linia przerywana = zgadywanie, 3). Środek: perplexity LM na token przed i po fine-tunie (skala log; tokenizery różnią się między rodzinami). Prawo: bity na znak --- porównywalne między tokenizerami.}}{11}{figure.6}\protected@file@percent }
+\newlabel{fig:ppl}{{6}{11}{Lewo: perplexity klasyfikacji $\exp (\mathrm {CE})$ (linia przerywana = zgadywanie, 3). Środek: perplexity LM na token przed i po fine-tunie (skala log; tokenizery różnią się między rodzinami). Prawo: bity na znak --- porównywalne między tokenizerami}{figure.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.6}Inferencja}{12}{subsection.8.6}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Przepustowość (cały test, batch 32) i opóźnienie (batch 1), jedna karta RTX 3060.}}{12}{figure.7}\protected@file@percent }
+\newlabel{fig:inference}{{7}{12}{Przepustowość (cały test, batch 32) i opóźnienie (batch 1), jedna karta RTX 3060}{figure.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.7}Ablacja rozmiaru danych}{12}{subsection.8.7}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces Ablacja rozmiaru zbioru treningowego: accuracy / F1 macro na teście [\%].}}{12}{table.8}\protected@file@percent }
+\newlabel{tab:ablation}{{8}{12}{Ablacja rozmiaru zbioru treningowego: accuracy / F1 macro na teście [\%]}{table.8}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces Accuracy w funkcji liczby przykładów treningowych (2\,000, 10\,000, pełny split).}}{13}{figure.8}\protected@file@percent }
+\newlabel{fig:ablation}{{8}{13}{Accuracy w funkcji liczby przykładów treningowych (2\,000, 10\,000, pełny split)}{figure.8}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.8}Przebieg treningu}{13}{subsection.8.8}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces Krzywe uczenia dla wybranych runów: strata treningowa, strata walidacyjna oraz accuracy (walidacja --- pełne linie z punktami, trening --- blade).}}{13}{figure.9}\protected@file@percent }
+\newlabel{fig:curves}{{9}{13}{Krzywe uczenia dla wybranych runów: strata treningowa, strata walidacyjna oraz accuracy (walidacja --- pełne linie z punktami, trening --- blade)}{figure.9}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces Val F1 macro po każdej epoce dla pełnego fine-tune'u i LoRA.}}{14}{figure.10}\protected@file@percent }
+\newlabel{fig:valf1}{{10}{14}{Val F1 macro po każdej epoce dla pełnego fine-tune'u i LoRA}{figure.10}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.9}Macierze pomyłek}{14}{subsection.8.9}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {11}{\ignorespaces Macierze pomyłek na teście dla najlepszego własnego modelu i najlepszego wariantu GPT-2 (liczności i procent wiersza).}}{14}{figure.11}\protected@file@percent }
+\newlabel{fig:cm}{{11}{14}{Macierze pomyłek na teście dla najlepszego własnego modelu i najlepszego wariantu GPT-2 (liczności i procent wiersza)}{figure.11}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.10}Status kolejki}{14}{subsection.8.10}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {9}Analiza porównawcza}{14}{section.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.1}Pretrening vs trening od zera}{14}{subsection.9.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.2}Wpływ rozmiaru modelu}{15}{subsection.9.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.3}Porównanie metod dostrajania}{15}{subsection.9.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.4}Koszt: parametry, czas, inferencja}{15}{subsection.9.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.5}Perplexity}{16}{subsection.9.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.6}Zbieżność, stabilność i przeuczenie}{16}{subsection.9.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.7}Spostrzeżenia praktyczne}{16}{subsection.9.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {10}Wnioski}{17}{section.10}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {A}Reprodukcja}{17}{appendix.A}\protected@file@percent }
+\gdef \@abspage@last{17}

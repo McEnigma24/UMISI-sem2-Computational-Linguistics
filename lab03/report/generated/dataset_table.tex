@@ -1,19 +1,17 @@
 \begin{table}[H]
 \centering
 \small
-\caption{Tweet Eval (sentiment): rozmiary splitów i rozkład klas w zbiorze treningowym.}
+\caption{Tweet Eval (\texttt{cardiffnlp/tweet\_eval}, konfiguracja \texttt{sentiment}): oficjalne splity i rozkład klas. Rozkład testu wyraźnie różni się od treningu.}
 \label{tab:cls-data}
-\begin{tabular}{@{}lr@{}}
+\begin{tabular}{@{}lrrr@{}}
 \toprule
-Cecha & Wartość \\
+Klasa & Train & Val & Test \\
 \midrule
-Zbiór HF & \texttt{cardiffnlp/tweet\_eval} / \texttt{sentiment} \\
-Liczba klas & 3 \\
-Train / val / test & 45\,615 / 2\,000 / 12\,284 \\
-Train: negative & 7\,093 (15.5\%) \\
-Train: neutral & 20\,673 (45.3\%) \\
-Train: positive & 17\,849 (39.1\%) \\
-Maks. długość sekwencji & 128 tokenów \\
+\texttt{negative} & 7\,093 (15.5\%) & 312 (15.6\%) & 3\,972 (32.3\%) \\
+\texttt{neutral} & 20\,673 (45.3\%) & 869 (43.5\%) & 5\,937 (48.3\%) \\
+\texttt{positive} & 17\,849 (39.1\%) & 819 (41.0\%) & 2\,375 (19.3\%) \\
+\midrule
+razem & 45\,615 & 2\,000 & 12\,284 \\
 \bottomrule
 \end{tabular}
 \end{table}

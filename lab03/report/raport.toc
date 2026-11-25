@@ -1,17 +1,32 @@
 \babel@toc {english}{}\relax 
-\contentsline {section}{\numberline {1}Cel}{2}{section.1}%
-\contentsline {section}{\numberline {2}Środowisko obliczeniowe}{2}{section.2}%
-\contentsline {section}{\numberline {3}Pretrening własnych modeli językowych}{2}{section.3}%
-\contentsline {subsection}{\numberline {3.1}Korpus i tokenizacja}{2}{subsection.3.1}%
-\contentsline {subsection}{\numberline {3.2}Architektura i rozmiary}{2}{subsection.3.2}%
-\contentsline {subsection}{\numberline {3.3}Uwagi do porównań}{2}{subsection.3.3}%
-\contentsline {section}{\numberline {4}Zbiór danych klasyfikacji (Tweet Eval)}{3}{section.4}%
-\contentsline {section}{\numberline {5}Modele klasyfikacyjne}{3}{section.5}%
-\contentsline {section}{\numberline {6}Siatka eksperymentów (fine-tuning)}{3}{section.6}%
-\contentsline {section}{\numberline {7}Protokół ewaluacji}{4}{section.7}%
-\contentsline {section}{\numberline {8}Wyniki liczbowe}{4}{section.8}%
-\contentsline {subsection}{\numberline {8.1}Wykresy zbiorcze}{4}{subsection.8.1}%
-\contentsline {subsection}{\numberline {8.2}Runy oczekujące}{5}{subsection.8.2}%
-\contentsline {section}{\numberline {9}Analiza porównawcza}{6}{section.9}%
-\contentsline {section}{\numberline {10}Wnioski}{7}{section.10}%
-\contentsline {section}{\numberline {A}Reprodukcja}{7}{appendix.A}%
+\contentsline {section}{\numberline {1}Cel}{3}{section.1}%
+\contentsline {section}{\numberline {2}Środowisko obliczeniowe}{3}{section.2}%
+\contentsline {section}{\numberline {3}Pretrening własnych modeli językowych}{3}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Korpus i tokenizacja}{3}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Architektura i rozmiary}{3}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Uwagi do porównań}{3}{subsection.3.3}%
+\contentsline {section}{\numberline {4}Zbiór danych klasyfikacji (Tweet Eval)}{4}{section.4}%
+\contentsline {section}{\numberline {5}Modele klasyfikacyjne}{4}{section.5}%
+\contentsline {section}{\numberline {6}Siatka eksperymentów (fine-tuning)}{4}{section.6}%
+\contentsline {section}{\numberline {7}Protokół ewaluacji}{5}{section.7}%
+\contentsline {section}{\numberline {8}Wyniki liczbowe}{6}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Ranking wszystkich wariantów}{6}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}Metoda dostrajania a backbone}{9}{subsection.8.2}%
+\contentsline {subsection}{\numberline {8.3}Rozmiar modelu}{9}{subsection.8.3}%
+\contentsline {subsection}{\numberline {8.4}Koszt treningu}{10}{subsection.8.4}%
+\contentsline {subsection}{\numberline {8.5}Perplexity}{10}{subsection.8.5}%
+\contentsline {subsection}{\numberline {8.6}Inferencja}{12}{subsection.8.6}%
+\contentsline {subsection}{\numberline {8.7}Ablacja rozmiaru danych}{12}{subsection.8.7}%
+\contentsline {subsection}{\numberline {8.8}Przebieg treningu}{13}{subsection.8.8}%
+\contentsline {subsection}{\numberline {8.9}Macierze pomyłek}{14}{subsection.8.9}%
+\contentsline {subsection}{\numberline {8.10}Status kolejki}{14}{subsection.8.10}%
+\contentsline {section}{\numberline {9}Analiza porównawcza}{14}{section.9}%
+\contentsline {subsection}{\numberline {9.1}Pretrening vs trening od zera}{14}{subsection.9.1}%
+\contentsline {subsection}{\numberline {9.2}Wpływ rozmiaru modelu}{15}{subsection.9.2}%
+\contentsline {subsection}{\numberline {9.3}Porównanie metod dostrajania}{15}{subsection.9.3}%
+\contentsline {subsection}{\numberline {9.4}Koszt: parametry, czas, inferencja}{15}{subsection.9.4}%
+\contentsline {subsection}{\numberline {9.5}Perplexity}{16}{subsection.9.5}%
+\contentsline {subsection}{\numberline {9.6}Zbieżność, stabilność i przeuczenie}{16}{subsection.9.6}%
+\contentsline {subsection}{\numberline {9.7}Spostrzeżenia praktyczne}{16}{subsection.9.7}%
+\contentsline {section}{\numberline {10}Wnioski}{17}{section.10}%
+\contentsline {section}{\numberline {A}Reprodukcja}{17}{appendix.A}%

@@ -9,12 +9,13 @@
 \usepackage{booktabs}
 \usepackage{longtable}
 \usepackage{hyperref}
-\usepackage{xcolor}
+\usepackage[table]{xcolor}
 \usepackage{float}
 \usepackage{amsmath}
 
 \newcommand{\repoRoot}{..}
 \setlength{\emergencystretch}{3em}
+\IfFileExists{generated/results_macros.tex}{\input{generated/results_macros.tex}}{}
 
 \newcommand{\maybeinput}[1]{%
   \IfFileExists{#1}{\input{#1}}{%
@@ -24,7 +25,7 @@
     \end{center}}}
 
 \newcommand{\maybefig}[2][]{%
-  \IfFileExists{#2}{\includegraphics[width=\linewidth,keepaspectratio]{#2}}{%
+  \IfFileExists{#2}{\includegraphics[width=\linewidth,height=0.82\textheight,keepaspectratio]{#2}}{%
     \begin{center}
     \fcolorbox{orange}{yellow!10}{%
       \parbox{0.85\linewidth}{\centering\textit{Wykres \texttt{\detokenize{#2}} --- pojawi się po zakończeniu eksperymentów. #1}}}%
@@ -51,7 +52,7 @@ $p\in\{10\%,20\%,30\%,50\%\}$). Trening klasyfikacji: 5 epok, global batch 64 (2
 
 \section{Środowisko obliczeniowe}
 \begin{itemize}
-  \item Sprzęt: 2$\times$ NVIDIA GeForce RTX 3060 (12\,GiB), AMD Ryzen 5 5600X, WSL2, RAM hosta ok.\,10\,GiB.
+  \item Sprzęt: 2$\times$ NVIDIA GeForce RTX 3060 (12\,GiB), AMD Ryzen 5 5600X, 16\,GiB RAM, WSL2 z limitem pamięci 9\,GiB.
   \item Oprogramowanie: Docker, \texttt{uv}, PyTorch + Lightning (\texttt{ddp\_spawn}), \texttt{transformers}, \texttt{peft}, \texttt{datasets}.
   \item Precyzja treningu klasyfikacji: \texttt{bf16-mixed}.
   \item Kod: \texttt{lab03/src/finetune.py}, presety \texttt{finetune\_presets.py}, kolejka \texttt{FINETUNE\_QUEUE}.
@@ -74,6 +75,12 @@ Dla modeli BPE stosowany jest tokenizer pretreningu; dla GPT-2 --- tokenizer Hug
 
 \maybeinput{generated/dataset_table.tex}
 
+\maybeinput{generated/dataset_examples.tex}
+
+\textbf{Przetwarzanie wstępne.} Teksty bez zmian treści (anonimizacja \texttt{@user} pochodzi z samego zbioru);
+tokenizacja tokenizerem danego backbone'u, ucięcie do 128 tokenów (żaden tweet z próbki go nie przekracza),
+dopełnienie do najdłuższej sekwencji w batchu z maską uwagi. Splity są oficjalne, bez re-próbkowania.
+
 \section{Modele klasyfikacyjne}
 \textbf{miniLLaMA + głowa:} backbone z checkpointu LM (lub scratch), pooling ostatniego tokena,
 MLP (\texttt{head\_hidden}=256, dropout 0.1). \textbf{GPT-2:} \texttt{GPT2ForSequenceClassification}.
@@ -86,44 +93,289 @@ Metryki walidacyjne: makro F1; wybór \texttt{best\_eval} po \texttt{val/f1\_mac
 
 \section{Protokół ewaluacji}
 \begin{itemize}
-  \item Po treningu: test na wagach \texttt{*\_best\_eval.pt} (lub \texttt{final} jako fallback).
-  \item Metryki: accuracy, F1 (macro/weighted), confusion matrix, czas treningu i inferencji (ms/przykład, 1000-próbkowy benchmark).
-  \item Perplexity klasyfikacji: $\exp(\mathrm{CE}_\mathrm{test})$ (zakres teoretyczny $[1,3]$ przy 3 klasach).
-  \item Perplexity LM: średnia NLL następnego tokenu na tekstach testowych (przed i po fine-tunie) + bity/znak dla porównań między tokenizerami.
-  \item Checkpointy epok: \texttt{checkpoints/epoch\_XXXX.pt} (same wagi).
+  \item Bez early stoppingu: każdy run trwa pełne 5 epok, po każdej zapisywany jest checkpoint wag
+        (\texttt{checkpoints/epoch\_XXXX.pt}). Do testu wybierane są wagi z epoki o najwyższym val F1 macro
+        (\texttt{*\_best\_eval.pt}).
+  \item Metryki: accuracy, F1 macro i ważone, macierz pomyłek, czas treningu (łącznie i na epokę).
+  \item Inferencja: \emph{przepustowość} --- cały test (12\,284 przykłady) batchami po 32 na jednej karcie;
+        \emph{opóźnienie} --- 1\,000 pojedynczych przykładów (batch 1), średni czas na przykład.
+  \item Perplexity klasyfikacji: $\exp(\mathrm{CE}_\mathrm{test})$. Klasyfikator zgadujący równomiernie ma
+        wartość 3; mniej oznacza pewne i trafne predykcje, więcej --- pewne i błędne.
+  \item Perplexity LM: średnia NLL następnego tokenu na tekstach testowych (tylko prawdziwe tokeny, bez
+        dopełnienia), liczona głowicą LM backbone'u (\texttt{lm\_head} miniLLaMA, a dla GPT-2 wiązane
+        embeddingi \texttt{wte}) przed fine-tunem i po nim. Ponieważ tokenizery różnią się (BPE 32k vs GPT-2 50k),
+        porównania między rodzinami modeli robimy w \emph{bitach na znak}.
 \end{itemize}
 
 \section{Wyniki liczbowe}
+Wszystkie liczby dotyczą oficjalnego splitu testowego (12\,284 tweety), dla wag z epoki o najlepszym
+val F1 macro. Wyniki pochodzą z pojedynczego uruchomienia (jedno ziarno), więc różnice rzędu
+0,5\,pp traktujemy jako mieszczące się w szumie.
+
+\subsection{Ranking wszystkich wariantów}
 \maybeinput{generated/results_table.tex}
 
-\subsection{Wykresy zbiorcze}
+\begin{figure}[H]
+\centering
 \maybefig[]{generated/figures/accuracy_ranking.pdf}
-\maybefig[]{generated/figures/f1_ranking.pdf}
-\maybefig[]{generated/figures/val_f1_curves.pdf}
+\caption{Accuracy na teście dla całej siatki (pełny zbiór treningowy); kolor = backbone.}
+\label{fig:acc-ranking}
+\end{figure}
 
-\subsection{Runy oczekujące}
+\begin{figure}[H]
+\centering
+\maybefig[]{generated/figures/f1_ranking.pdf}
+\caption{F1 macro na teście dla całej siatki.}
+\label{fig:f1-ranking}
+\end{figure}
+
+\subsection{Metoda dostrajania a backbone}
+\begin{figure}[H]
+\centering
+\maybefig[]{generated/figures/method_heatmap.pdf}
+\caption{Accuracy [\%] w układzie backbone $\times$ metoda. Kolumny ,,top $p$'' to odmrożenie
+$k=\lceil pL\rceil$ ostatnich bloków; dla płytkich modeli kilka udziałów daje to samo $k$, wtedy
+ten sam run wypełnia kilka kolumn.}
+\label{fig:heatmap}
+\end{figure}
+
+\subsection{Rozmiar modelu}
+\begin{figure}[H]
+\centering
+\maybefig[]{generated/figures/acc_vs_size.pdf}
+\caption{Accuracy w funkcji rozmiaru backbone'u (parametry modelu bazowego, bez adapterów).
+Dla ,,ostatnich bloków'' pokazany najlepszy wariant $k$.}
+\label{fig:size}
+\end{figure}
+
+\subsection{Koszt treningu}
+\begin{figure}[H]
+\centering
+\maybefig[]{generated/figures/tradeoff.pdf}
+\caption{Accuracy vs liczba trenowanych parametrów (lewo) i vs czas treningu 5 epok na 2$\times$RTX 3060 (prawo).}
+\label{fig:tradeoff}
+\end{figure}
+
+\subsection{Perplexity}
+\maybeinput{generated/lm_table.tex}
+
+\begin{figure}[H]
+\centering
+\maybefig[]{generated/figures/perplexity.pdf}
+\caption{Lewo: perplexity klasyfikacji $\exp(\mathrm{CE})$ (linia przerywana = zgadywanie, 3).
+Środek: perplexity LM na token przed i po fine-tunie (skala log; tokenizery różnią się między
+rodzinami). Prawo: bity na znak --- porównywalne między tokenizerami.}
+\label{fig:ppl}
+\end{figure}
+
+\subsection{Inferencja}
+\begin{figure}[H]
+\centering
+\maybefig[]{generated/figures/inference.pdf}
+\caption{Przepustowość (cały test, batch 32) i opóźnienie (batch 1), jedna karta RTX 3060.}
+\label{fig:inference}
+\end{figure}
+
+\subsection{Ablacja rozmiaru danych}
+\maybeinput{generated/ablation_table.tex}
+
+\begin{figure}[H]
+\centering
+\maybefig[]{generated/figures/data_ablation.pdf}
+\caption{Accuracy w funkcji liczby przykładów treningowych (2\,000, 10\,000, pełny split).}
+\label{fig:ablation}
+\end{figure}
+
+\subsection{Przebieg treningu}
+\begin{figure}[H]
+\centering
+\maybefig[]{generated/figures/learning_curves.pdf}
+\caption{Krzywe uczenia dla wybranych runów: strata treningowa, strata walidacyjna oraz accuracy
+(walidacja --- pełne linie z punktami, trening --- blade).}
+\label{fig:curves}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\maybefig[]{generated/figures/val_f1_curves.pdf}
+\caption{Val F1 macro po każdej epoce dla pełnego fine-tune'u i LoRA.}
+\label{fig:valf1}
+\end{figure}
+
+\subsection{Macierze pomyłek}
+\begin{figure}[H]
+\centering
+\maybefig[]{generated/figures/confusion_best.pdf}
+\caption{Macierze pomyłek na teście dla najlepszego własnego modelu i najlepszego wariantu GPT-2
+(liczności i procent wiersza).}
+\label{fig:cm}
+\end{figure}
+
+\subsection{Status kolejki}
 \maybeinput{generated/missing_runs.tex}
 
 \section{Analiza porównawcza}
-\begin{center}
-\fcolorbox{blue}{blue!5}{%
-\parbox{0.92\linewidth}{%
-\textit{Sekcja do uzupełnienia po zakończeniu nocnej kolejki: wpływ rozmiaru modelu, metody dostrajania, trade-off dokładność/czas/inferencja, ablacja rozmiaru danych treningowych.}}}
-\end{center}
+
+\subsection{Pretrening vs trening od zera}
+Przy identycznej architekturze (miniLLaMA-5M, pełny fine-tune) start z checkpointu LM daje
+\resptFiveFullAcc\,\% accuracy wobec \resscratchAcc\,\% od zera (+\resgainPretrain\,pp; F1 macro 61,1
+vs 55,2). Przewaga utrzymuje się na każdym rozmiarze danych (tab.~\ref{tab:ablation}): pt-110M
+wyprzedza scratch o 5,7\,pp przy 2\,000 przykładów, 8,4\,pp przy 10\,000 i 6,2\,pp na pełnym zbiorze.
+Model od zera trenowany na całych 45\,615 tweetach osiąga mniej więcej poziom pt-110M uczonego na
+10\,000 przykładów (57,7 vs 58,5\,\%), a GPT-2 z LoRA na 10\,000 przykładów (68,9\,\%) bije każdy
+własny model trenowany na pełnych danych. Pretrening działa więc jak mnożnik danych: wiedza
+o języku nie musi być odkrywana z etykiet sentymentu.
+
+Jednocześnie pretrening na WikiText-103 nie daje cech, które same w sobie kodują sentyment:
+zamrożony backbone z wytrenowaną tylko głową (48,7--53,9\,\%) przegrywa ze scratch-5M, a pt-5M
+z jednym odmrożonym blokiem (56,5\,\%) jest nadal nieco poniżej. Korzyść z pretreningu ujawnia się
+dopiero wtedy, gdy reprezentacje mogą się dopasować do zadania.
+
+\textbf{Kiedy trening od zera ma sens?} W naszych wynikach scratch nigdy nie wygrywa z pretrenowanym
+modelem o tym samym rozmiarze i tej samej liczbie trenowanych parametrów, a koszt inferencji jest
+identyczny (ta sama architektura). Trening od zera jest uzasadniony, gdy nie istnieje checkpoint
+pasujący do domeny lub tokenizacji (np. nietypowy alfabet, sekwencje niebędące tekstem), gdy
+licencja lub prywatność wyklucza użycie cudzych wag, albo gdy danych etykietowanych jest bardzo
+dużo, a domena pretreningu jest odległa --- wtedy przewaga pretreningu maleje, a pełna kontrola
+nad słownikiem i architekturą może być ważniejsza.
+
+\subsection{Wpływ rozmiaru modelu}
+Dla własnych modeli accuracy pełnego fine-tune'u rośnie tylko nieznacznie: 62,7 (5M), 62,7 (10M),
+63,6 (25M), 63,9 (50M), 64,0\,\% (110M), czyli plateau od ok.\ 25M (rys.~\ref{fig:size}). Przyczyną
+jest pretrening, a nie pojemność: 50M i 110M zostały przerwane limitem 90\,min po ok.\ 2,25 i 1,3
+epoki, a perplexity LM na tweetach przed fine-tunem jest dla 25M, 50M i 110M praktycznie taka sama
+(ok.\ 3,2 bitu na znak). Większe modele nie nauczyły się więcej o języku, więc nie mają czego
+przenieść. Silniej od rozmiaru zależą warianty z zamrożonym backbone'em: sama głowa rośnie z 48,7
+do 53,9\,\%, a LoRA z ok.\ 60\,\% (5M, 10M) do 63,3--63,9\,\% (od 25M).
+
+Najmocniejszym argumentem jest porównanie GPT-2 z pt-110M: oba mają 12 bloków i $d=768$, a różnica
+na pełnym fine-tunie wynosi 6,4\,pp (70,4 vs 64,0\,\%). Przed fine-tunem GPT-2 modeluje tweety
+z 1,84 bitu na znak, a pt-110M z 3,21. GPT-2 uczył się na WebText (ok.\ 40\,GB tekstu z internetu,
+w tym języka nieformalnego), a nasze modele na ok.\ 100\,M tokenów encyklopedycznego WikiText-103.
+O jakości transferu decyduje zatem skala i dopasowanie domenowe danych pretreningu, a nie liczba
+parametrów. Nawet GPT-2 z samą głową (62,0\,\%) prawie dorównuje pełnemu fine-tune'owi pt-5M
+i pt-10M (62,7\,\%).
+
+\subsection{Porównanie metod dostrajania}
+\begin{itemize}
+  \item \textbf{Full i LoRA} są na szczycie dla każdego backbone'u. Od 25M w górę różnica między nimi
+        nie przekracza 0,35\,pp (dla pt-50M jest zerowa, dla GPT-2 LoRA wygrywa o 0,3\,pp:
+        \resbestAllAcc\,\% / F1 \resbestAllFone). Dla najmniejszych modeli (5M, 10M) LoRA traci
+        2,2--2,7\,pp: adaptery rzędu 16 w modelach o $d=144$ i $240$ to mało swobody, a tak małe
+        reprezentacje wymagają głębszej przebudowy.
+  \item \textbf{Ostatnie $k$ bloków}: accuracy rośnie prawie monotonicznie z $k$. Przy odmrożeniu
+        ok.\ połowy bloków strata do full wynosi 0,6\,pp dla GPT-2 (69,8 vs 70,4\,\%), 1,2--2,2\,pp dla
+        miniLLaMA od 25M, ale 2,6\,pp dla 10M i 6,1\,pp dla 5M, gdzie ,,połowa'' to jeden z dwóch
+        bloków. W GPT-2 już 2 z 12 bloków dają 67,8\,\%, więcej niż jakikolwiek własny model.
+  \item \textbf{Sama głowa} jest wyraźnie najgorsza: 10--14\,pp za full dla miniLLaMA (strata
+        maleje z rozmiarem) i 8,4\,pp dla GPT-2. Cechy ostatniego tokena modelu LM nie są
+        separowalne względem sentymentu przez małe MLP.
+\end{itemize}
+
+\subsection{Koszt: parametry, czas, inferencja}
+LoRA w GPT-2 trenuje 1,9\,\% wag i daje najlepszy wynik przy 38\,\% krótszym treningu niż full
+(10,3 vs 16,6\,min). Odmrożenie połowy bloków to kolejne 20\,\% oszczędności (8,4\,min) kosztem 0,6\,pp.
+W małych miniLLaMA LoRA \emph{nie} skraca treningu (pt-5M: 3,2 vs 2,6\,min, pt-10M: 4,2 vs
+3,6\,min): oszczędność na gradientach wag i stanie optymalizatora jest mniejsza niż narzut
+dodatkowych mnożeń i dropoutu adapterów w forwardzie. Zysk z LoRA pojawia się dopiero przy
+większych macierzach (pt-110M: 14,0 vs 16,1\,min).
+
+Przepustowość inferencji zależy praktycznie tylko od rozmiaru backbone'u: od ok.\ 5\,800 przykł./s
+(5M) do ok.\ 540 (110M) i 620 (GPT-2). Wyjątkiem są niezłączone adaptery LoRA, które zwiększają
+opóźnienie pojedynczego przykładu: GPT-2 25,6 vs 13,5\,ms, pt-110M 37 vs 24\,ms. Przy wdrożeniu
+należy wcześniej złączyć adaptery z wagami (\texttt{merge\_and\_unload}); wtedy koszt inferencji jest
+taki jak dla full. GPT-2 jest szybszy od pt-110M, choć ich kształt i koszt FFN na token są
+porównywalne (SwiGLU $3\times768\times2048$ vs MLP $2\times768\times3072$). Różnica wynika najpewniej
+z implementacji: HF używa zoptymalizowanych kerneli, a miniLLaMA wykonuje dodatkowo RoPE
+i trzy mnożenia w FFN.
+
+\subsection{Perplexity}
+\textbf{Klasyfikacja.} Wszystkie runy mają $\exp(\mathrm{CE}) < 3$ (lepiej niż zgadywanie):
+od ok.\ 1,9 (GPT-2 full) do 2,8 (sama głowa). Niska perplexity klasyfikacji idzie w parze
+z wysokim accuracy, ale nie jest z nim tożsama: GPT-2 full ma najniższą stratę, a LoRA najwyższe
+accuracy. Kalibrację pogarsza przeuczenie, o czym niżej.
+
+\textbf{Modelowanie języka.} Przed fine-tunem GPT-2 ma na tweetach perplexity 182 (1,84\,bpc),
+a własne modele od ok.\ 1\,800 do 4\,800 na token (3,19--3,60\,bpc). To skutek przesunięcia
+domeny (Wikipedia $\rightarrow$ tweety) i mniejszego korpusu. Po fine-tunie perplexity LM rośnie:
+dla GPT-2 full 8,5-krotnie (do ok.\ 1\,540), dla LoRA 3,4-krotnie (do ok.\ 620), a dla miniLLaMA
+full ok.\ 1,8--2,7-krotnie. Ukryte stany przesuwają się w stronę tego, co potrzebne głowie
+klasyfikacyjnej, a niewytrenowana głowica LM przestaje do nich pasować, czyli zachodzi
+\emph{zapominanie} zdolności LM. LoRA zapomina wyraźnie mniej niż full, bo zmiana wag jest niskiego
+rzędu. W GPT-2 jeszcze mniej zapomina odmrożenie ostatnich bloków: wzrost od 1,15-krotnego (2 bloki,
+209) do 2,4-krotnego (6 bloków, 440), bo dolna część sieci zostaje nietknięta.
+Sama głowa zostawia perplexity bez zmian, co jest jednocześnie testem poprawności pomiaru
+(backbone zamrożony).
+
+\subsection{Zbieżność, stabilność i przeuczenie}
+Najlepsza epoka walidacyjna to najczęściej 2 lub 3 (23 z 37 runów siatki). Przy pełnym fine-tunie
+strata walidacyjna jest minimalna po 1--2 epokach, a potem rośnie z ok.\ 0,7 do 1,2--1,7, podczas
+gdy accuracy treningowe dochodzi do 95--99,9\,\% (rys.~\ref{fig:curves}). Accuracy walidacyjne
+spada wolniej niż rośnie strata: model coraz pewniej się myli. Bez early stoppingu kluczowy jest
+wybór \texttt{best\_eval}: pełny fine-tune osiągał maksimum w epoce 1--2, LoRA w epoce 2--3
+(z wyjątkiem pt-10M --- epoka 4).
+LoRA zachowuje się stabilniej: dla GPT-2 strata walidacyjna zostaje w zakresie 0,62--0,67 przez
+wszystkie 5 epok, a strata treningowa nie spada poniżej 0,4, więc niski rząd działa jak
+regularyzacja. Warianty o małej pojemności uczą się wolniej: sama głowa osiąga maksimum w epoce
+4--5, a GPT-2 z 2--4 odmrożonymi blokami w epoce 5, więc tu dłuższy trening mógłby jeszcze pomóc.
+
+Accuracy testowe jest systematycznie niższe od walidacyjnego (np. pt-110M: val F1 ok.\ 68 vs test
+63). Rozkład klas w teście różni się od treningowego: negatywnych jest dwukrotnie więcej (32 vs
+16\,\%), a pozytywnych dwukrotnie mniej (19 vs 39\,\%). Widać to w macierzach pomyłek
+(rys.~\ref{fig:cm}): najwięcej błędów to tweety negatywne i pozytywne klasyfikowane jako neutralne.
+GPT-2 rozpoznaje klasę negatywną znacznie lepiej (recall 75 vs 59\,\%), co tłumaczy większość jego
+przewagi.
+
+\subsection{Spostrzeżenia praktyczne}
+\begin{itemize}
+  \item \textbf{Pamięć hosta, a nie GPU, była wąskim gardłem.} Na końcu \texttt{fit} w trybie
+        \texttt{ddp\_spawn} w ciągu kilku sekund zapisywano i wczytywano kilka kopii wag (checkpoint
+        epoki, \texttt{final.pt}, tymczasowy checkpoint Lightninga, \texttt{best\_eval}). Przy 500\,MB
+        na kopię GPT-2 to wystarczyło, żeby zawiesić WSL2. Pomogło usunięcie zbędnego zapisu,
+        zwolnienie loaderów i trenera przed testem oraz logowanie pamięci
+        (\texttt{mem\_log.csv} w każdym runie).
+  \item \textbf{Perplexity LM łatwo policzyć źle.} Pierwsza wersja wliczała do sumy NLL pozycje
+        dopełnienia, a dzieliła tylko przez prawdziwe tokeny; wartości przekraczały próg $e^{20}$
+        i przed/po wychodziło identyczne. Po zamaskowaniu celów na dopełnieniu wyniki stały się
+        sensowne (np.\ 182 dla GPT-2, zgodnie z przesunięciem domeny).
+  \item \textbf{PEFT \texttt{modules\_to\_save} dopasowuje nazwy po sufiksie}: wpis \texttt{"head"}
+        objął także \texttt{backbone.lm\_head}, który dostał nieużywaną trenowalną kopię
+        (vocab$\times d$). Nie wpływa to na wyniki klasyfikacji (warstwa nie jest na ścieżce forwardu
+        i nie dostaje gradientu), ale zawyża licznik trenowanych parametrów, więc w tabelach jest
+        on skorygowany. Faktycznie LoRA w miniLLaMA trenuje 2,2--2,7\,\% wag.
+  \item \textbf{Checkpoint po każdej epoce} kosztuje dużo dysku (do 5$\times$0,5\,GB na run), ale
+        pozwolił wybrać najlepszą epokę post hoc i przeliczyć metryki LM bez ponownego treningu.
+\end{itemize}
 
 \section{Wnioski}
-\begin{center}
-\fcolorbox{blue}{blue!5}{%
-\parbox{0.92\linewidth}{%
-\textit{Wnioski końcowe --- po zebraniu wyników.}}}
-\end{center}
+\begin{enumerate}
+  \item Dostrajanie pretrenowanego modelu jest lepsze od treningu od zera przy każdym badanym
+        rozmiarze danych. Ten sam 5M model zyskuje \resgainPretrain\,pp accuracy, a pretrenowane
+        modele osiągają z 10\,000 przykładów wynik, którego scratch nie osiąga z 45\,000.
+  \item Jakość i domena danych pretreningu ważą więcej niż liczba parametrów: GPT-2 (\resbestGptAcc\,\%)
+        wyprzedza najlepszy własny model (\resbestPtLabel, \resbestPtAcc\,\%) o \resgapPtGpt\,pp przy
+        podobnym rozmiarze, a własne modele saturują od ok.\ 25M, bo większe były niedotrenowane.
+  \item LoRA to najlepszy kompromis dla modeli od ok.\ 25M parametrów: jakość full przy 2--3\,\%
+        trenowanych wag, krótszym treningu (dla GPT-2 o 38\,\%) i mniejszym zapominaniu LM.
+        W bardzo małych modelach lepszy jest pełny fine-tune.
+  \item Odmrożenie połowy ostatnich bloków to tańsza alternatywa dla głębszych modeli (strata
+        0,6--2,2\,pp do full), ale nie dla płytkich. Trening samej głowy na zamrożonym backbone'ie jest
+        niewystarczający ($-$8 do $-$14\,pp).
+  \item Pełny fine-tune i LoRA przeuczają się po 2--3 epokach. Wybór najlepszej epoki po val F1 jest
+        niezbędny, a dla tych metod 3 epoki zamiast 5 skróciłyby trening o 40\,\% bez straty jakości.
+        Warianty z zamrożoną większością wag potrzebują więcej epok.
+  \item Do wdrożenia: złączyć adaptery LoRA (inaczej opóźnienie rośnie ok.\ dwukrotnie) i pamiętać,
+        że zmiana rozkładu klas między treningiem a testem obniża wynik bardziej niż różnice
+        między metodami dostrajania.
+\end{enumerate}
 
 \appendix
 \section{Reprodukcja}
 \begin{verbatim}
 cd lab03
-./shell.sh ./start.sh          # pełna kolejka fine-tune + generator raportu
-./report/build.sh              # pdflatex po stronie hosta
+./background_process_start.sh  # kolejka fine-tune (log: nohup.out)
+./shell.sh uv run python src/recompute_lm_eval.py  # metryki LM
+./report/build.sh              # generator raportu + pdflatex
 ./shell.sh uv run python src/finetune.py --list-sources
 \end{verbatim}
 

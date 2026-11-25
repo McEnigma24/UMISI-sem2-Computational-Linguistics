@@ -11,3 +11,7 @@ rsync -av \
 --exclude='runs' \
 /home/womackow/CODE_SPACE/_my_stuff_/ML/Pytorch-Playground/RNN/Language_RNN/ lab02/
 
+
+
+zip -r lab03-deliverable.zip lab03/ -x "lab03/saved_models/*" "lab03/**/__pycache__/*" "lab03/.git/*"
+
